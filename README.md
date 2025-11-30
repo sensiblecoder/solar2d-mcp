@@ -1,6 +1,11 @@
 # Solar2D MCP Server
 
-A Model Context Protocol (MCP) server for working with Solar2D (Corona SDK) projects. This server allows Claude to understand and help with Solar2D project development.
+A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for working with Solar2D (Corona SDK) projects. This server enables AI assistants to run, debug, and interact with Solar2D games.
+
+**Works with any MCP-compatible client**, including:
+- Claude Code CLI
+- Other AI assistants that support MCP
+- Custom integrations
 
 ## Setup
 
@@ -57,25 +62,54 @@ claude mcp list
 
 You can also add it to a specific project using `--scope project` or create a `.mcp.json` file in your project root.
 
+## First-Time Setup
+
+On first use, the server needs to know where your Solar2D Simulator is installed.
+
+1. **Auto-detection**: The server automatically scans common installation paths
+2. **Confirmation**: You'll be prompted to confirm or provide the simulator location
+3. **Remembered**: Your choice is saved to `~/.config/solar2d-mcp/config.json`
+
+Example first-run flow:
+```
+User: Run my Solar2D project
+Assistant: Solar2D simulator needs to be configured. Detected:
+  - /Applications/Corona-3726/Corona Simulator.app/Contents/MacOS/Corona Simulator
+
+Use configure_solar2d with confirm=true to use this path.
+
+User: Yes, use that one
+Assistant: [calls configure_solar2d(confirm=true)]
+✓ Solar2D simulator confirmed and saved!
+```
+
 ## Features
 
-### Current
+### Tools
 
-- `run_solar2d_project` tool - Run a Solar2D project in the simulator
+- `configure_solar2d` - Configure the Solar2D simulator path
+  - Auto-detects installed simulators
+  - Persists configuration across sessions
+  - Use `confirm=true` to accept detected path
+  - Or provide custom path with `simulator_path="..."`
+- `run_solar2d_project` - Run a Solar2D project in the simulator
   - Accepts project directory or main.lua path
   - Optional debug and console flags
   - Launches simulator in background
   - Injects logger that captures all print() output
-- `read_solar2d_logs` tool - Read console logs from running Solar2D Simulator
+- `read_solar2d_logs` - Read console logs from running Solar2D Simulator
   - View all Lua print() statements from your game code
   - Configurable number of recent lines to display
   - Helps debug your Lua code in real-time
   - **Automatic setup**: Logger is auto-injected into main.lua on first run
   - Note: Only captures Lua print() output, not Solar2D system messages
-- `list_running_projects` tool - List all tracked Solar2D Simulator instances
+- `list_running_projects` - List all tracked Solar2D Simulator instances
   - Shows PID, status, and log file location
   - Useful for managing multiple running projects
-- `solar2d://info` resource - Server information
+
+### Resources
+
+- `solar2d://info` - Server information
 
 ### Possible Plans
 
@@ -90,27 +124,38 @@ You can also add it to a specific project using `--scope project` or create a `.
 
 ## Development
 
-The server uses the Model Context Protocol (MCP) Python SDK to communicate with Claude.
+The server uses the Model Context Protocol (MCP) Python SDK.
 
 ### Project Structure
 
 ```
-Solar2DMCP/
-├── server.py          # Main MCP server implementation
+solar2d-mcp/
+├── server.py          # MCP server entry point
+├── config.py          # Configuration management and auto-detection
+├── utils.py           # Shared utilities
+├── tools/
+│   ├── __init__.py    # Tool dispatcher
+│   ├── configure.py   # configure_solar2d tool
+│   ├── run_project.py # run_solar2d_project tool
+│   ├── read_logs.py   # read_solar2d_logs tool
+│   └── list_projects.py # list_running_projects tool
+├── resources/
+│   ├── __init__.py    # Resource dispatcher
+│   └── info.py        # solar2d://info resource
 ├── pyproject.toml     # Project dependencies and metadata
 └── README.md          # This file
 ```
 
 ## Testing
 
-Once configured, you can test the server by asking Claude:
+Once configured, you can test the server with prompts like:
 
+- "Configure Solar2D" (first-time setup)
 - "Run my Solar2D project at /path/to/my-game"
 - "Launch the Solar2D simulator with debug enabled for my project"
 - "Show me the logs from my running Solar2D project"
 - "Read the last 100 lines of Solar2D logs"
 - "List all running Solar2D projects"
-- "Show me the solar2d://info resource"
 
 ## Capturing Lua print() Output
 
@@ -143,19 +188,19 @@ Once the logger is injected, it works **forever** - even when you launch Solar2D
 **Running a project and viewing logs:**
 ```
 User: Run my Solar2D project and show me the logs
-Claude: [runs project] [waits a moment] [reads logs and shows output]
+Assistant: [runs project] [waits a moment] [reads logs and shows output]
 ```
 
 **Reading logs from manually-launched Solar2D:**
 ```
 User: I'm running my game in the IDE, can you check the logs?
-Claude: [reads logs from /tmp/corona_log_my-game.txt] [shows recent output]
+Assistant: [reads logs from /tmp/corona_log_my-game.txt] [shows recent output]
 ```
 
 **Debugging with real-time logs:**
 ```
 User: I'm seeing an error in my game, can you check the logs?
-Claude: [reads logs] I see the error at line X: [explains the issue]
+Assistant: [reads logs] I see the error at line X: [explains the issue]
 ```
 
 ## Resources

@@ -12,3 +12,6 @@ build/
 
 # OS
 .DS_Store
+
+# Local settings
+settings.local.json
