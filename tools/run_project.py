@@ -9,7 +9,8 @@ from pathlib import Path
 
 from mcp.types import Tool, TextContent
 
-from utils import find_main_lua, running_projects, CORONA_SIMULATOR
+from utils import find_main_lua, running_projects
+import config
 
 
 TOOL = Tool(
@@ -141,6 +142,34 @@ async def handle(arguments: dict) -> list[TextContent]:
     if not project_path:
         return [TextContent(type="text", text="Error: project_path is required")]
 
+    # Check if Solar2D is configured
+    simulator_path, detected_paths, needs_confirmation = config.get_simulator_or_detect()
+
+    if needs_confirmation:
+        # Prompt user to configure first
+        lines = ["Solar2D simulator needs to be configured before running projects.", ""]
+
+        if detected_paths:
+            lines.append("Detected simulators:")
+            for path in detected_paths:
+                lines.append(f"  - {path}")
+            lines.append("")
+            lines.append("Please use the configure_solar2d tool to confirm or select a simulator:")
+            lines.append("  - Call configure_solar2d with confirm=true to use the detected path")
+            lines.append("  - Or provide a specific path with simulator_path=\"...\"")
+        else:
+            lines.append("No Solar2D simulators were detected.")
+            lines.append("Please use the configure_solar2d tool to set the simulator path:")
+            lines.append("  configure_solar2d(simulator_path=\"/path/to/Corona Simulator\")")
+
+        return [TextContent(type="text", text="\n".join(lines))]
+
+    if not simulator_path or not os.path.exists(simulator_path):
+        return [TextContent(
+            type="text",
+            text=f"Error: Solar2D Simulator not found. Please run configure_solar2d to set the path."
+        )]
+
     # Find main.lua
     main_lua_path = find_main_lua(project_path)
     project_dir = str(Path(main_lua_path).parent)
@@ -155,13 +184,6 @@ async def handle(arguments: dict) -> list[TextContent]:
             except subprocess.TimeoutExpired:
                 old_process.kill()
         del running_projects[project_dir]
-
-    # Check if Solar2D Simulator exists
-    if not os.path.exists(CORONA_SIMULATOR):
-        return [TextContent(
-            type="text",
-            text=f"Error: Solar2D Simulator not found at {CORONA_SIMULATOR}"
-        )]
 
     # Check if main.lua exists
     if not os.path.exists(main_lua_path):
@@ -181,7 +203,7 @@ async def handle(arguments: dict) -> list[TextContent]:
     injected = inject_logger_into_main_lua(main_lua_path)
 
     # Build the command
-    cmd = [CORONA_SIMULATOR]
+    cmd = [simulator_path]
 
     if no_console:
         cmd.extend(["-no-console", "YES"])

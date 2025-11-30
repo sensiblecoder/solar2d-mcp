@@ -4,9 +4,6 @@ Shared utilities for Solar2D MCP Server.
 
 from pathlib import Path
 
-# Corona Simulator path
-CORONA_SIMULATOR = "/Applications/Corona-3726/Corona Simulator.app/Contents/MacOS/Corona Simulator"
-
 # Track running Corona processes and their log files
 running_projects = {}  # {project_path: {"pid": int, "log_file": str, "process": subprocess.Popen}}
 
