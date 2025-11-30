@@ -106,6 +106,16 @@ Assistant: [calls configure_solar2d(confirm=true)]
 - `list_running_projects` - List all tracked Solar2D Simulator instances
   - Shows PID, status, and log file location
   - Useful for managing multiple running projects
+- `start_screenshot_recording` - Start capturing screenshots from the simulator
+  - Captures at 1 screenshot per second
+  - Default recording duration: 60 seconds
+  - Can extend recording while already capturing
+- `stop_screenshot_recording` - Stop screenshot recording early
+- `get_simulator_screenshot` - Get screenshot(s) for visual analysis
+  - `which="latest"` - Get most recent screenshot (default)
+  - `which="all"` - List all available screenshots
+  - `which="5"` - Get specific screenshot by number
+- `list_screenshots` - List all available screenshots with file sizes
 
 ### Resources
 
@@ -113,9 +123,6 @@ Assistant: [calls configure_solar2d(confirm=true)]
 
 ### Possible Plans
 
-- Ability to "see" the simulator
-  - Ability to "watch" a manual play-through
-  - Ability to "find" things it can "see"
 - Basic ability to click and swipe things it "sees"
   - More complex ability to "play", based on "watching"
 - Built-in Skills
@@ -138,7 +145,8 @@ solar2d-mcp/
 │   ├── configure.py   # configure_solar2d tool
 │   ├── run_project.py # run_solar2d_project tool
 │   ├── read_logs.py   # read_solar2d_logs tool
-│   └── list_projects.py # list_running_projects tool
+│   ├── list_projects.py # list_running_projects tool
+│   └── screenshot.py  # Screenshot recording tools
 ├── resources/
 │   ├── __init__.py    # Resource dispatcher
 │   └── info.py        # solar2d://info resource
@@ -183,6 +191,41 @@ Once the logger is injected, it works **forever** - even when you launch Solar2D
 - Use `read_solar2d_logs` tool to view logs anytime, regardless of how Solar2D was launched
 - The MCP server only reads the log file - `_mcp_logger.lua` is responsible for all writing
 
+## Capturing Screenshots
+
+The MCP server can capture screenshots from the running simulator for visual analysis!
+
+### How It Works
+
+1. **Auto-injected module**: When you run a project, `_mcp_screenshot.lua` is created and injected into `main.lua`
+2. **Control file signaling**: The MCP server writes to a control file to start/stop recording
+3. **Periodic capture**: Screenshots are captured every 1 second while recording is active
+4. **JPEG compression**: Images are saved as JPEG at content resolution for smaller file sizes
+
+### Screenshot Location
+
+Screenshots are saved to: `/tmp/solar2d_screenshots_<project-name>/`
+
+The directory is cleared when the simulator starts, but screenshots persist across recording sessions within the same run.
+
+### Recording Workflow
+
+```
+User: Start recording screenshots for 30 seconds
+Assistant: [calls start_screenshot_recording with duration=30]
+
+User: Show me what the game looks like now
+Assistant: [calls get_simulator_screenshot with which="latest"]
+         [displays the screenshot for visual analysis]
+
+User: Stop recording early
+Assistant: [calls stop_screenshot_recording]
+```
+
+### Extending Recordings
+
+You can call `start_screenshot_recording` while already recording to extend the duration. Screenshots continue from where they left off (not reset).
+
 ## Usage Examples
 
 **Running a project and viewing logs:**
@@ -201,6 +244,24 @@ Assistant: [reads logs from /tmp/corona_log_my-game.txt] [shows recent output]
 ```
 User: I'm seeing an error in my game, can you check the logs?
 Assistant: [reads logs] I see the error at line X: [explains the issue]
+```
+
+**Capturing and analyzing screenshots:**
+```
+User: Run my game and show me what's on screen
+Assistant: [runs project] [starts recording] [waits] [gets latest screenshot]
+         I can see your game is showing the title screen with...
+```
+
+**Watching gameplay:**
+```
+User: Record 30 seconds of my game while I play
+Assistant: [starts 30 second recording]
+         Recording started! Play your game and I'll capture screenshots.
+
+User: Ok I'm done, show me what you captured
+Assistant: [lists screenshots] I captured 28 screenshots. Let me show you a few...
+         [gets specific screenshots for analysis]
 ```
 
 ## Resources

@@ -163,7 +163,7 @@ local function captureScreen()
     if not isRecording() then return end
 
     screenshotCount = screenshotCount + 1
-    local filename = string.format("screenshot_%03d.png", screenshotCount)
+    local filename = string.format("screenshot_%03d.jpg", screenshotCount)
     local fullPath = screenshotDir .. "/" .. filename
 
     -- Capture the display to Solar2D's temp directory
@@ -171,7 +171,7 @@ local function captureScreen()
         filename = filename,
         baseDir = system.TemporaryDirectory,
         captureOffscreenArea = false,
-        isFullResolution = true
+        isFullResolution = false
     }})
 
     -- Copy from Solar2D temp to our /tmp/ screenshot directory
