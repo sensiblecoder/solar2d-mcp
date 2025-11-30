@@ -166,7 +166,7 @@ async def handle_get_screenshot(arguments: dict) -> list[TextContent | ImageCont
     # Get list of screenshots
     screenshots = sorted([
         f for f in os.listdir(screenshot_dir)
-        if f.startswith("screenshot_") and f.endswith(".png")
+        if f.startswith("screenshot_") and f.endswith(".jpg")
     ])
 
     if not screenshots:
@@ -179,12 +179,20 @@ async def handle_get_screenshot(arguments: dict) -> list[TextContent | ImageCont
     if which == "latest":
         files_to_return = [screenshots[-1]]
     elif which == "all":
-        files_to_return = screenshots
+        # Return file list only (not images) to avoid 413 errors
+        lines = [f"Found {len(screenshots)} screenshot(s):", ""]
+        for filename in screenshots:
+            filepath = os.path.join(screenshot_dir, filename)
+            size = os.path.getsize(filepath)
+            lines.append(f"  {filename} ({size:,} bytes)")
+        lines.append("")
+        lines.append("Use get_simulator_screenshot with a specific number to view an image.")
+        return [TextContent(type="text", text="\n".join(lines))]
     else:
         # Try to get specific screenshot number
         try:
             num = int(which)
-            filename = f"screenshot_{num:03d}.png"
+            filename = f"screenshot_{num:03d}.jpg"
             if filename in screenshots:
                 files_to_return = [filename]
             else:
@@ -209,7 +217,7 @@ async def handle_get_screenshot(arguments: dict) -> list[TextContent | ImageCont
             result.append(ImageContent(
                 type="image",
                 data=image_data,
-                mimeType="image/png"
+                mimeType="image/jpeg"
             ))
         except Exception as e:
             result.append(TextContent(
@@ -251,7 +259,7 @@ async def handle_list_screenshots(arguments: dict) -> list[TextContent]:
     # Get list of screenshots with file info
     screenshots = sorted([
         f for f in os.listdir(screenshot_dir)
-        if f.startswith("screenshot_") and f.endswith(".png")
+        if f.startswith("screenshot_") and f.endswith(".jpg")
     ])
 
     if not screenshots:
