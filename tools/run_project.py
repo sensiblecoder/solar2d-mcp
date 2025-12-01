@@ -110,21 +110,16 @@ local function fileExists(path)
     return false
 end
 
--- Helper to read control file
+-- Helper to read and consume control file
 local function readControlFile()
     local file = io.open(controlFile, "r")
     if file then
         local content = file:read("*all")
         file:close()
-        local duration = tonumber(content)
-        return duration or 0
+        os.remove(controlFile)  -- Consume the command
+        return content
     end
-    return 0
-end
-
--- Helper to delete control file
-local function deleteControlFile()
-    os.remove(controlFile)
+    return nil
 end
 
 -- Clear screenshot directory on start
@@ -179,24 +174,54 @@ local function captureScreen()
     if tempPath then
         if copyFile(tempPath, fullPath) then
             os.remove(tempPath)  -- Clean up temp file
-            print("[MCP Screenshot] Captured: " .. filename)
-        else
-            print("[MCP Screenshot] Error copying: " .. filename)
+        end
+    end
+end
+
+-- Capture a single on-demand screenshot (not part of recording sequence)
+local function captureOnDemand()
+    local filename = "screenshot_latest.jpg"
+    local fullPath = screenshotDir .. "/" .. filename
+
+    -- Capture the display to Solar2D's temp directory
+    display.save(display.currentStage, {{
+        filename = filename,
+        baseDir = system.TemporaryDirectory,
+        captureOffscreenArea = false,
+        isFullResolution = false
+    }})
+
+    -- Copy from Solar2D temp to our /tmp/ screenshot directory
+    local tempPath = system.pathForFile(filename, system.TemporaryDirectory)
+    if tempPath then
+        if copyFile(tempPath, fullPath) then
+            os.remove(tempPath)  -- Clean up temp file
+            print("[MCP Screenshot] On-demand capture saved")
         end
     end
 end
 
 -- Check control file for recording commands
 local function checkControl()
-    local duration = readControlFile()
-    if duration > 0 then
+    local content = readControlFile()
+    if not content then return end
+
+    -- Check for "now" command (on-demand capture)
+    if content == "now" then
+        captureOnDemand()
+        return
+    end
+
+    local duration = tonumber(content)
+    if duration == nil then
+        -- Not a number, ignore
+        return
+    elseif duration > 0 then
         recordingEndTime = system.getTimer() + (duration * 1000)
-        deleteControlFile()  -- Consume the command
         print("[MCP Screenshot] Recording for " .. duration .. " seconds (screenshots continue from #" .. (screenshotCount + 1) .. ")")
-    elseif duration == 0 and fileExists(controlFile) then
+    elseif duration == 0 then
         -- Explicit stop command
         recordingEndTime = 0
-        deleteControlFile()
         print("[MCP Screenshot] Recording stopped at screenshot #" .. screenshotCount)
     end
 end
@@ -215,6 +240,188 @@ timer.performWithDelay(500, checkControl, 0)
         f.write(lua_screenshot)
 
     return screenshot_path
+
+
+def create_touch_module(project_dir: str, project_name: str) -> str:
+    """Create a Lua file that handles touch simulation via control file."""
+    control_file = os.path.join(tempfile.gettempdir(), f"solar2d_touch_{project_name}.control")
+    info_file = os.path.join(tempfile.gettempdir(), f"solar2d_display_{project_name}.json")
+
+    lua_touch = f'''
+-- MCP Touch: Simulates touch events from control file commands
+local controlFile = "{control_file}"
+local infoFile = "{info_file}"
+local checkInterval = 100  -- Check for commands every 100ms
+local json = require("json")
+
+-- Stored target from "began" phase for consistent event dispatch
+local touchTarget = nil
+local touchStartX, touchStartY = 0, 0
+
+-- Helper to read and consume control file
+local function readControlFile()
+    local file = io.open(controlFile, "r")
+    if file then
+        local content = file:read("*all")
+        file:close()
+        os.remove(controlFile)  -- Consume the command
+        return content
+    end
+    return nil
+end
+
+-- Parse command string
+local function parseCommand(content)
+    local parts = {{}}
+    for part in string.gmatch(content, "[^,]+") do
+        table.insert(parts, part)
+    end
+    return parts
+end
+
+-- Check if object has a touch listener
+local function hasTouchListener(obj)
+    -- Check for touch_handler (used by some frameworks)
+    if obj.touch_handler then return true end
+    -- Check for _tableListeners.touch (standard Solar2D listener table)
+    if obj._tableListeners and obj._tableListeners.touch then return true end
+    -- Check for _functionListeners.touch
+    if obj._functionListeners and obj._functionListeners.touch then return true end
+    return false
+end
+
+-- Find the topmost touchable object at coordinates via hit testing
+local function findHitObject(group, x, y)
+    if not group or not group.numChildren then return nil end
+
+    -- Traverse in reverse order (higher index = on top)
+    for i = group.numChildren, 1, -1 do
+        local child = group[i]
+        if child and child.isVisible ~= false then
+            -- Recurse into groups first
+            if child.numChildren then
+                local hit = findHitObject(child, x, y)
+                if hit then return hit end
+            end
+
+            -- Check if this object is within bounds
+            if child.contentBounds then
+                local bounds = child.contentBounds
+                if x >= bounds.xMin and x <= bounds.xMax and
+                   y >= bounds.yMin and y <= bounds.yMax then
+                    -- Check if it has a touch listener
+                    if hasTouchListener(child) then
+                        return child
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+-- Dispatch a touch event to appropriate target
+local function dispatchTouch(phase, x, y)
+    local target = nil
+
+    if phase == "began" then
+        -- Find the topmost touchable object at this point
+        target = findHitObject(display.getCurrentStage(), x, y)
+        if target then
+            touchTarget = target
+            touchStartX, touchStartY = x, y
+        end
+    else
+        target = touchTarget
+        if phase == "ended" then
+            touchTarget = nil
+        end
+    end
+
+    local event = {{
+        name = "touch",
+        phase = phase,
+        x = x,
+        y = y,
+        xStart = touchStartX or x,
+        yStart = touchStartY or y,
+        time = system.getTimer(),
+        target = target
+    }}
+
+    if target then
+        target:dispatchEvent(event)
+    else
+        -- Fallback to Runtime if no target found
+        Runtime:dispatchEvent(event)
+    end
+end
+
+-- Write display info to file
+local function writeDisplayInfo()
+    local info = {{
+        contentWidth = display.contentWidth,
+        contentHeight = display.contentHeight,
+        actualContentWidth = display.actualContentWidth,
+        actualContentHeight = display.actualContentHeight,
+        screenOriginX = display.screenOriginX,
+        screenOriginY = display.screenOriginY
+    }}
+
+    local file = io.open(infoFile, "w")
+    if file then
+        file:write(json.encode(info))
+        file:close()
+    end
+end
+
+-- Execute a tap at coordinates
+local function executeTap(x, y)
+    print("[MCP Touch] Tap at (" .. x .. ", " .. y .. ")")
+
+    -- Dispatch "began" phase
+    dispatchTouch("began", x, y)
+
+    -- Short delay, then dispatch "ended" phase
+    timer.performWithDelay(50, function()
+        dispatchTouch("ended", x, y)
+    end)
+end
+
+-- Check control file for commands
+local function checkControl()
+    local content = readControlFile()
+    if content then
+        local parts = parseCommand(content)
+        local cmd = parts[1]
+
+        if cmd == "tap" then
+            local x = tonumber(parts[2])
+            local y = tonumber(parts[3])
+            if x and y then
+                executeTap(x, y)
+            else
+                print("[MCP Touch] Invalid tap coordinates")
+            end
+        else
+            print("[MCP Touch] Unknown command: " .. tostring(cmd))
+        end
+    end
+end
+
+-- Initialize
+writeDisplayInfo()  -- Write display info on startup
+print("[MCP Touch] Module initialized - listening for touch commands")
+
+-- Start polling for commands
+timer.performWithDelay(checkInterval, checkControl, 0)
+'''
+
+    touch_path = os.path.join(project_dir, "_mcp_touch.lua")
+    with open(touch_path, 'w') as f:
+        f.write(lua_touch)
+
+    return touch_path
 
 
 def inject_module_into_main_lua(main_lua_path: str, module_name: str) -> bool:
@@ -385,9 +592,13 @@ async def handle(arguments: dict) -> list[TextContent]:
     # Create screenshot module
     screenshot_path = create_screenshot_module(project_dir, project_name)
 
+    # Create touch module
+    touch_path = create_touch_module(project_dir, project_name)
+
     # Inject modules into main.lua if not already present
     logger_injected = inject_module_into_main_lua(main_lua_path, "_mcp_logger")
     screenshot_injected = inject_module_into_main_lua(main_lua_path, "_mcp_screenshot")
+    touch_injected = inject_module_into_main_lua(main_lua_path, "_mcp_touch")
 
     # Build the command
     cmd = [simulator_path]
@@ -427,6 +638,11 @@ async def handle(arguments: dict) -> list[TextContent]:
             status_lines.append("Screenshot module injected into main.lua")
         else:
             status_lines.append("Screenshot module already present in main.lua")
+
+        if touch_injected:
+            status_lines.append("Touch module injected into main.lua")
+        else:
+            status_lines.append("Touch module already present in main.lua")
 
         screenshot_dir = os.path.join(tempfile.gettempdir(), f"solar2d_screenshots_{project_name}")
 

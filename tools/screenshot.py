@@ -2,6 +2,7 @@
 Screenshot tools - Control screenshot recording and retrieve captured images.
 """
 
+import asyncio
 import base64
 import os
 import tempfile
@@ -50,7 +51,7 @@ STOP_RECORDING_TOOL = Tool(
 
 GET_SCREENSHOT_TOOL = Tool(
     name="get_simulator_screenshot",
-    description="Get screenshot(s) from the Solar2D simulator. Returns the actual image for visual analysis.",
+    description="Get a screenshot from the Solar2D simulator for visual analysis. By default captures a fresh screenshot of the current simulator state. Use 'last' or a number to retrieve from a previous recording session.",
     inputSchema={
         "type": "object",
         "properties": {
@@ -60,7 +61,7 @@ GET_SCREENSHOT_TOOL = Tool(
             },
             "which": {
                 "type": "string",
-                "description": "Which screenshot to get: 'latest' (default), 'all', or a specific number like '1', '2', etc.",
+                "description": "'latest' (default) = capture fresh screenshot now. 'last' = most recent from recording. 'all' = list recorded screenshots. Or a number like '5' for specific recorded screenshot.",
                 "default": "latest"
             }
         },
@@ -156,6 +157,43 @@ async def handle_get_screenshot(arguments: dict) -> list[TextContent | ImageCont
 
     project_name = _get_project_name(project_path)
     screenshot_dir = _get_screenshot_dir(project_name)
+    control_file = _get_control_file(project_name)
+
+    # Handle "latest" - capture fresh screenshot on demand
+    if which == "latest":
+        # Ensure screenshot dir exists
+        os.makedirs(screenshot_dir, exist_ok=True)
+
+        # Write "now" command to trigger immediate capture
+        with open(control_file, 'w') as f:
+            f.write("now")
+
+        # Wait for the screenshot to be captured (polling interval is 500ms)
+        latest_file = os.path.join(screenshot_dir, "screenshot_latest.jpg")
+        # Get current mtime if file exists
+        old_mtime = os.path.getmtime(latest_file) if os.path.exists(latest_file) else 0
+
+        # Wait up to 2 seconds for new screenshot
+        for _ in range(20):
+            await asyncio.sleep(0.1)
+            if os.path.exists(latest_file):
+                new_mtime = os.path.getmtime(latest_file)
+                if new_mtime > old_mtime:
+                    # New screenshot captured
+                    try:
+                        with open(latest_file, 'rb') as f:
+                            image_data = base64.standard_b64encode(f.read()).decode('utf-8')
+
+                        return [
+                            ImageContent(type="image", data=image_data, mimeType="image/jpeg")
+                        ]
+                    except Exception as e:
+                        return [TextContent(type="text", text=f"Error reading screenshot: {str(e)}")]
+
+        return [TextContent(
+            type="text",
+            text="Timeout waiting for screenshot. Make sure the simulator is running."
+        )]
 
     if not os.path.exists(screenshot_dir):
         return [TextContent(
@@ -163,23 +201,27 @@ async def handle_get_screenshot(arguments: dict) -> list[TextContent | ImageCont
             text=f"Screenshot directory not found: {screenshot_dir}\n\nMake sure to run the project first with run_solar2d_project."
         )]
 
-    # Get list of screenshots
+    # Get list of recorded screenshots (exclude screenshot_latest.jpg)
     screenshots = sorted([
         f for f in os.listdir(screenshot_dir)
-        if f.startswith("screenshot_") and f.endswith(".jpg")
+        if f.startswith("screenshot_") and f.endswith(".jpg") and f != "screenshot_latest.jpg"
     ])
 
-    if not screenshots:
-        return [TextContent(
-            type="text",
-            text="No screenshots found. Use start_screenshot_recording to begin capturing."
-        )]
-
-    # Determine which screenshots to return
-    if which == "latest":
+    # Handle "last" - get most recent from recording
+    if which == "last":
+        if not screenshots:
+            return [TextContent(
+                type="text",
+                text="No recorded screenshots found. Use start_screenshot_recording to begin capturing."
+            )]
         files_to_return = [screenshots[-1]]
     elif which == "all":
         # Return file list only (not images) to avoid 413 errors
+        if not screenshots:
+            return [TextContent(
+                type="text",
+                text="No recorded screenshots found. Use start_screenshot_recording to begin capturing."
+            )]
         lines = [f"Found {len(screenshots)} screenshot(s):", ""]
         for filename in screenshots:
             filepath = os.path.join(screenshot_dir, filename)
@@ -196,6 +238,11 @@ async def handle_get_screenshot(arguments: dict) -> list[TextContent | ImageCont
             if filename in screenshots:
                 files_to_return = [filename]
             else:
+                if not screenshots:
+                    return [TextContent(
+                        type="text",
+                        text="No recorded screenshots found. Use start_screenshot_recording to begin capturing."
+                    )]
                 return [TextContent(
                     type="text",
                     text=f"Screenshot {num} not found. Available: 1-{len(screenshots)}"
@@ -203,7 +250,7 @@ async def handle_get_screenshot(arguments: dict) -> list[TextContent | ImageCont
         except ValueError:
             return [TextContent(
                 type="text",
-                text=f"Invalid 'which' value: {which}. Use 'latest', 'all', or a number."
+                text=f"Invalid 'which' value: {which}. Use 'latest', 'last', 'all', or a number."
             )]
 
     # Return the images

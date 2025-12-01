@@ -112,10 +112,16 @@ Assistant: [calls configure_solar2d(confirm=true)]
   - Can extend recording while already capturing
 - `stop_screenshot_recording` - Stop screenshot recording early
 - `get_simulator_screenshot` - Get screenshot(s) for visual analysis
-  - `which="latest"` - Get most recent screenshot (default)
-  - `which="all"` - List all available screenshots
-  - `which="5"` - Get specific screenshot by number
+  - `which="latest"` - Capture fresh screenshot now (default)
+  - `which="last"` - Get most recent from recording session
+  - `which="all"` - List all recorded screenshots
+  - `which="5"` - Get specific recorded screenshot by number
 - `list_screenshots` - List all available screenshots with file sizes
+- `simulate_tap` - Tap/click on the simulator screen
+  - Uses percentage-based bounding box (left, right, top, bottom)
+  - Taps the center of the specified area
+  - Example: button at 30-50% horizontal, 60-70% vertical
+- `get_display_info` - Get display coordinate system info
 
 ### Resources
 
@@ -123,8 +129,8 @@ Assistant: [calls configure_solar2d(confirm=true)]
 
 ### Possible Plans
 
-- Basic ability to click and swipe things it "sees"
-  - More complex ability to "play", based on "watching"
+- More complex ability to "play", based on "watching"
+- Swipe/drag gestures
 - Built-in Skills
   - Conventions & Good Practices
   - Common Patterns / Templates
@@ -146,7 +152,8 @@ solar2d-mcp/
 │   ├── run_project.py # run_solar2d_project tool
 │   ├── read_logs.py   # read_solar2d_logs tool
 │   ├── list_projects.py # list_running_projects tool
-│   └── screenshot.py  # Screenshot recording tools
+│   ├── screenshot.py  # Screenshot recording tools
+│   └── touch.py       # Touch simulation tools
 ├── resources/
 │   ├── __init__.py    # Resource dispatcher
 │   └── info.py        # solar2d://info resource
@@ -226,42 +233,38 @@ Assistant: [calls stop_screenshot_recording]
 
 You can call `start_screenshot_recording` while already recording to extend the duration. Screenshots continue from where they left off (not reset).
 
-## Usage Examples
+## Touch Interaction
 
-**Running a project and viewing logs:**
-```
-User: Run my Solar2D project and show me the logs
-Assistant: [runs project] [waits a moment] [reads logs and shows output]
-```
+The MCP server can simulate taps on the running simulator, allowing the AI to interact with your game!
 
-**Reading logs from manually-launched Solar2D:**
-```
-User: I'm running my game in the IDE, can you check the logs?
-Assistant: [reads logs from /tmp/corona_log_my-game.txt] [shows recent output]
-```
+### How It Works
 
-**Debugging with real-time logs:**
-```
-User: I'm seeing an error in my game, can you check the logs?
-Assistant: [reads logs] I see the error at line X: [explains the issue]
-```
+1. **Auto-injected module**: `_mcp_touch.lua` is created and injected into `main.lua`
+2. **Hit testing**: The module finds touchable objects at the tap location
+3. **Event dispatch**: Synthetic touch events are sent to the target object
 
-**Capturing and analyzing screenshots:**
-```
-User: Run my game and show me what's on screen
-Assistant: [runs project] [starts recording] [waits] [gets latest screenshot]
-         I can see your game is showing the title screen with...
-```
+### Percentage-Based Coordinates
 
-**Watching gameplay:**
-```
-User: Record 30 seconds of my game while I play
-Assistant: [starts 30 second recording]
-         Recording started! Play your game and I'll capture screenshots.
+Taps use a bounding box with percentage coordinates (0-100):
+- `left`, `right`: Horizontal bounds (0=left edge, 100=right edge)
+- `top`, `bottom`: Vertical bounds (0=top edge, 100=bottom edge)
 
-User: Ok I'm done, show me what you captured
-Assistant: [lists screenshots] I captured 28 screenshots. Let me show you a few...
-         [gets specific screenshots for analysis]
+The tool taps the **center** of the bounding box. This makes it easy for the AI to estimate positions visually from screenshots.
+
+### Example Workflow
+
+```
+User: Click on the play button
+Assistant: [calls get_simulator_screenshot to see current state]
+         I can see a play button in the center of the screen.
+         [calls simulate_tap with left=40, right=60, top=45, bottom=55]
+         Tapped the play button!
+
+User: Click on any popup buttons you see
+Assistant: [calls get_simulator_screenshot]
+         I see a "Continue" button at the bottom of the screen.
+         [calls simulate_tap with left=30, right=70, top=80, bottom=90]
+         Tapped the Continue button.
 ```
 
 ## Resources
