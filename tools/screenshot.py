@@ -16,7 +16,7 @@ from utils import find_main_lua
 # Tool definitions
 START_RECORDING_TOOL = Tool(
     name="start_screenshot_recording",
-    description="Start recording screenshots from the Solar2D simulator. Screenshots are captured every 1 second. Can be called while already recording to extend the duration.",
+    description="Start recording screenshots from the Solar2D simulator. Screenshots are captured every 100ms. Can be called while already recording to extend the duration.",
     inputSchema={
         "type": "object",
         "properties": {
@@ -26,7 +26,7 @@ START_RECORDING_TOOL = Tool(
             },
             "duration": {
                 "type": "number",
-                "description": "Recording duration in seconds (default: 60)",
+                "description": "Recording duration in seconds (default: 60, max: 300)",
                 "default": 60
             }
         },
@@ -117,13 +117,16 @@ async def handle_start_recording(arguments: dict) -> list[TextContent]:
     control_file = _get_control_file(project_name)
     screenshot_dir = _get_screenshot_dir(project_name)
 
+    # Cap duration at 5 minutes (300 seconds)
+    duration = min(int(duration), 300)
+
     # Write duration to control file
     with open(control_file, 'w') as f:
-        f.write(str(int(duration)))
+        f.write(str(duration))
 
     return [TextContent(
         type="text",
-        text=f"Screenshot recording started!\n\nDuration: {duration} seconds\nInterval: 1 second\nScreenshots will be saved to: {screenshot_dir}\n\nUse get_simulator_screenshot to view captured images.\nUse stop_screenshot_recording to stop early."
+        text=f"Screenshot recording started!\n\nDuration: {duration} seconds\nInterval: 100ms (10 fps)\nScreenshots will be saved to: {screenshot_dir}\n\nUse get_simulator_screenshot to view captured images.\nUse stop_screenshot_recording to stop early."
     )]
 
 

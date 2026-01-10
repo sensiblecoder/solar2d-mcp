@@ -107,8 +107,8 @@ Assistant: [calls configure_solar2d(confirm=true)]
   - Shows PID, status, and log file location
   - Useful for managing multiple running projects
 - `start_screenshot_recording` - Start capturing screenshots from the simulator
-  - Captures at 1 screenshot per second
-  - Default recording duration: 60 seconds
+  - Captures at 10 fps (100ms interval)
+  - Default recording duration: 60 seconds (max: 300 seconds / 5 minutes)
   - Can extend recording while already capturing
 - `stop_screenshot_recording` - Stop screenshot recording early
 - `get_simulator_screenshot` - Get screenshot(s) for visual analysis
@@ -206,7 +206,7 @@ The MCP server can capture screenshots from the running simulator for visual ana
 
 1. **Auto-injected module**: When you run a project, `_mcp_screenshot.lua` is created and injected into `main.lua`
 2. **Control file signaling**: The MCP server writes to a control file to start/stop recording
-3. **Periodic capture**: Screenshots are captured every 1 second while recording is active
+3. **Periodic capture**: Screenshots are captured every 100ms (10 fps) while recording is active
 4. **JPEG compression**: Images are saved as JPEG at content resolution for smaller file sizes
 
 ### Screenshot Location

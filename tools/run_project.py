@@ -96,7 +96,7 @@ def create_screenshot_module(project_dir: str, project_name: str) -> str:
 local lfs = require("lfs")
 local screenshotDir = "{screenshot_dir}"
 local controlFile = "{control_file}"
-local captureInterval = 1000  -- 1 second between captures
+local captureInterval = 100  -- 100ms between captures
 local screenshotCount = 0
 local recordingEndTime = 0
 
