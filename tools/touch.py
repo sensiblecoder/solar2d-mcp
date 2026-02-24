@@ -59,8 +59,61 @@ GET_DISPLAY_INFO_TOOL = Tool(
     }
 )
 
+SIMULATE_DRAG_TOOL = Tool(
+    name="simulate_drag",
+    description="Simulate a drag/swipe gesture in the Solar2D simulator. Specify start and end bounding boxes using percentages. The gesture moves from the center of the start box to the center of the end box over the given duration.",
+    inputSchema={
+        "type": "object",
+        "properties": {
+            "project_path": {
+                "type": "string",
+                "description": "Path to the project directory or main.lua file"
+            },
+            "start_left": {
+                "type": "number",
+                "description": "Left edge of start area as percentage (0=left edge of screen)"
+            },
+            "start_right": {
+                "type": "number",
+                "description": "Right edge of start area as percentage (100=right edge of screen)"
+            },
+            "start_top": {
+                "type": "number",
+                "description": "Top edge of start area as percentage (0=top of screen)"
+            },
+            "start_bottom": {
+                "type": "number",
+                "description": "Bottom edge of start area as percentage (100=bottom of screen)"
+            },
+            "end_left": {
+                "type": "number",
+                "description": "Left edge of end area as percentage (0=left edge of screen)"
+            },
+            "end_right": {
+                "type": "number",
+                "description": "Right edge of end area as percentage (100=right edge of screen)"
+            },
+            "end_top": {
+                "type": "number",
+                "description": "Top edge of end area as percentage (0=top of screen)"
+            },
+            "end_bottom": {
+                "type": "number",
+                "description": "Bottom edge of end area as percentage (100=bottom of screen)"
+            },
+            "duration": {
+                "type": "number",
+                "description": "Duration of the drag in milliseconds (default: 300)",
+                "default": 300
+            }
+        },
+        "required": ["project_path", "start_left", "start_right", "start_top", "start_bottom",
+                      "end_left", "end_right", "end_top", "end_bottom"]
+    }
+)
+
 # Export all tools
-TOOLS = [SIMULATE_TAP_TOOL, GET_DISPLAY_INFO_TOOL]
+TOOLS = [SIMULATE_TAP_TOOL, SIMULATE_DRAG_TOOL, GET_DISPLAY_INFO_TOOL]
 
 
 def _get_project_name(project_path: str) -> str:
@@ -131,6 +184,72 @@ async def handle_simulate_tap(arguments: dict) -> list[TextContent]:
     return [TextContent(
         type="text",
         text=f"Tap sent to center of box ({left}-{right}%, {top}-{bottom}%)"
+    )]
+
+
+async def handle_simulate_drag(arguments: dict) -> list[TextContent]:
+    """Handle simulate_drag tool call."""
+    project_path = arguments.get("project_path")
+    start_left = arguments.get("start_left")
+    start_right = arguments.get("start_right")
+    start_top = arguments.get("start_top")
+    start_bottom = arguments.get("start_bottom")
+    end_left = arguments.get("end_left")
+    end_right = arguments.get("end_right")
+    end_top = arguments.get("end_top")
+    end_bottom = arguments.get("end_bottom")
+    duration = arguments.get("duration", 300)
+
+    if not project_path:
+        return [TextContent(type="text", text="Error: project_path is required")]
+
+    if None in (start_left, start_right, start_top, start_bottom,
+                end_left, end_right, end_top, end_bottom):
+        return [TextContent(type="text", text="Error: all start and end bounding box parameters are required")]
+
+    project_name = _get_project_name(project_path)
+    control_file = _get_control_file(project_name)
+    info_file = _get_info_file(project_name)
+
+    # Read display info to convert percentages to coordinates
+    if not os.path.exists(info_file):
+        return [TextContent(
+            type="text",
+            text="Display info not found. Make sure the simulator is running."
+        )]
+
+    try:
+        with open(info_file, 'r') as f:
+            info = json.load(f)
+        content_width = info.get('contentWidth')
+        content_height = info.get('contentHeight')
+
+        if not content_width or not content_height:
+            return [TextContent(type="text", text="Error: Invalid display info")]
+
+        # Calculate center of start bounding box
+        sx_percent = (start_left + start_right) / 2
+        sy_percent = (start_top + start_bottom) / 2
+        x1 = int(content_width * sx_percent / 100)
+        y1 = int(content_height * sy_percent / 100)
+
+        # Calculate center of end bounding box
+        ex_percent = (end_left + end_right) / 2
+        ey_percent = (end_top + end_bottom) / 2
+        x2 = int(content_width * ex_percent / 100)
+        y2 = int(content_height * ey_percent / 100)
+
+    except Exception as e:
+        return [TextContent(type="text", text=f"Error reading display info: {str(e)}")]
+
+    # Write drag command to control file
+    command = f"drag,{x1},{y1},{x2},{y2},{int(duration)}"
+    with open(control_file, 'w') as f:
+        f.write(command)
+
+    return [TextContent(
+        type="text",
+        text=f"Drag sent from ({start_left}-{start_right}%, {start_top}-{start_bottom}%) to ({end_left}-{end_right}%, {end_top}-{end_bottom}%) over {int(duration)}ms"
     )]
 
 

@@ -388,6 +388,34 @@ local function executeTap(x, y)
     end)
 end
 
+-- Execute a drag from (x1,y1) to (x2,y2) over duration ms
+local function executeDrag(x1, y1, x2, y2, duration)
+    print("[MCP Touch] Drag from (" .. x1 .. ", " .. y1 .. ") to (" .. x2 .. ", " .. y2 .. ") over " .. duration .. "ms")
+
+    local steps = math.max(1, math.floor(duration / 16))  -- ~60fps
+    local stepDelay = duration / steps
+
+    -- Dispatch "began" at start position
+    dispatchTouch("began", x1, y1)
+
+    -- Dispatch "moved" events at interpolated positions
+    for i = 1, steps do
+        timer.performWithDelay(math.floor(stepDelay * i), function()
+            local t = i / steps
+            local x = x1 + (x2 - x1) * t
+            local y = y1 + (y2 - y1) * t
+            dispatchTouch("moved", x, y)
+
+            -- Dispatch "ended" after the final moved event
+            if i == steps then
+                timer.performWithDelay(16, function()
+                    dispatchTouch("ended", x2, y2)
+                end)
+            end
+        end)
+    end
+end
+
 -- Check control file for commands
 local function checkControl()
     local content = readControlFile()
@@ -402,6 +430,17 @@ local function checkControl()
                 executeTap(x, y)
             else
                 print("[MCP Touch] Invalid tap coordinates")
+            end
+        elseif cmd == "drag" then
+            local x1 = tonumber(parts[2])
+            local y1 = tonumber(parts[3])
+            local x2 = tonumber(parts[4])
+            local y2 = tonumber(parts[5])
+            local dur = tonumber(parts[6])
+            if x1 and y1 and x2 and y2 and dur then
+                executeDrag(x1, y1, x2, y2, dur)
+            else
+                print("[MCP Touch] Invalid drag parameters")
             end
         else
             print("[MCP Touch] Unknown command: " .. tostring(cmd))

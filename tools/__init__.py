@@ -30,6 +30,7 @@ _HANDLERS = {
     "get_simulator_screenshot": screenshot.handle_get_screenshot,
     "list_screenshots": screenshot.handle_list_screenshots,
     "simulate_tap": touch.handle_simulate_tap,
+    "simulate_drag": touch.handle_simulate_drag,
     "get_display_info": touch.handle_get_display_info,
     **social.HANDLERS,  # Social media handlers
     **trello.HANDLERS,  # Trello handlers
