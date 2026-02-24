@@ -10,7 +10,10 @@ TOOL = Tool(
     name="get_trello_card",
     description=(
         "Get full details of a Trello card: name, description, checklist items, "
-        "comments, attachments, labels, due date, and lane."
+        "comments, attachments, labels, due date, and lane. "
+        "IMPORTANT: Always read the comments — they often contain instructions, "
+        "feedback, or calls-to-action from the user. The most recent comment "
+        "is shown first and may be the user's latest request."
     ),
     inputSchema={
         "type": "object",
@@ -105,16 +108,23 @@ async def handle(arguments: dict) -> list[TextContent]:
         for att in attachments:
             lines.append(f"  - {att.get('name', 'file')}: {att.get('url', 'N/A')}")
 
-    # Comments
+    # Comments — most recent first (Trello API returns newest first)
     if actions:
         lines.append("")
         lines.append("## Comments")
-        for action in actions:
+        for idx, action in enumerate(actions):
             data = action.get("data", {})
             text = data.get("text", "")
             date = action.get("date", "")[:10]
             author = action.get("memberCreator", {}).get("fullName", "Unknown")
-            lines.append(f"\n**{author}** ({date}):")
-            lines.append(text)
+            if idx == 0:
+                lines.append("")
+                lines.append(">>> LATEST COMMENT (may be a call-to-action) <<<")
+                lines.append(f"**{author}** ({date}):")
+                lines.append(text)
+                lines.append(">>> END LATEST COMMENT <<<")
+            else:
+                lines.append(f"\n**{author}** ({date}):")
+                lines.append(text)
 
     return [TextContent(type="text", text="\n".join(lines))]

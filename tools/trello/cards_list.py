@@ -19,7 +19,9 @@ TOOL = Tool(
     description=(
         "List cards on the configured Trello board, optionally filtered by lane and/or label. "
         "Cards with the 'priority' label are sorted first. "
-        "Lanes: ideas, planning, blocked_plan, backlog, in_progress, blocked_work, done."
+        "Lanes: ideas, planning, blocked_plan, backlog, in_progress, blocked_work, done. "
+        "TIP: Use get_trello_card on individual cards to see their comments — "
+        "comments often contain user instructions or calls-to-action."
     ),
     inputSchema={
         "type": "object",
