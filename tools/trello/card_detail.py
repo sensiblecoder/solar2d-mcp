@@ -4,16 +4,23 @@ Trello card detail — full card info including description, checklist, comments
 
 from mcp.types import Tool, TextContent
 
-from tools.trello.client import get_label_map, trello_request
+from tools.trello.client import get_label_map, resolve_lane_role, trello_request, LANE_NAMES
 
 TOOL = Tool(
     name="get_trello_card",
     description=(
         "Get full details of a Trello card: name, description, checklist items, "
-        "comments, attachments, labels, due date, and lane. "
-        "IMPORTANT: Always read the comments — they often contain instructions, "
-        "feedback, or calls-to-action from the user. The most recent comment "
-        "is shown first and may be the user's latest request."
+        "comments, attachments, labels, due date, and lane.\n\n"
+        "IMPORTANT — COMMENT WORKFLOW:\n"
+        "Always read the comments carefully. The most recent comment is shown first "
+        "and may be a call-to-action (CTA) from the user.\n\n"
+        "When the latest comment is a CTA (question, request, feedback):\n"
+        "  1. DO NOT start implementing or writing code\n"
+        "  2. Respond to the CTA by adding a comment with your analysis/plan/answer\n"
+        "  3. Move the card to blocked_plan — it needs user review before proceeding\n"
+        "  4. Only move to backlog/in_progress AFTER the user unblocks it\n\n"
+        "The card's lane must always reflect its true status. If you need user input, "
+        "the card belongs in blocked_plan, not planning."
     ),
     inputSchema={
         "type": "object",
@@ -69,8 +76,12 @@ async def handle(arguments: dict) -> list[TextContent]:
     label_map = get_label_map()
     id_to_name = {v: k for k, v in label_map.items()}
 
+    lane_role = resolve_lane_role(card.get("idList", ""))
+    lane_display = LANE_NAMES.get(lane_role, "Unknown") if lane_role else "Unknown"
+
     lines = [f"# {card.get('name', 'Untitled')}"]
     lines.append(f"ID: {card_id}")
+    lines.append(f"Lane: {lane_display} ({lane_role or '?'})")
     lines.append(f"URL: {card.get('shortUrl', 'N/A')}")
 
     if card.get("due"):
