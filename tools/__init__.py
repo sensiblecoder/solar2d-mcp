@@ -4,7 +4,7 @@ Solar2D MCP Tools - Tool definitions and dispatcher.
 
 from mcp.types import Tool, TextContent, ImageContent
 
-from tools import run_project, read_logs, list_projects, configure, screenshot, touch
+from tools import run_project, read_logs, list_projects, configure, screenshot, touch, social
 
 
 # Collect all tools
@@ -15,6 +15,7 @@ TOOLS: list[Tool] = [
     list_projects.TOOL,
     *screenshot.TOOLS,  # Include all screenshot tools
     *touch.TOOLS,  # Include touch simulation tools
+    *social.TOOLS,  # Include social media tools
 ]
 
 # Map tool names to handlers
@@ -29,6 +30,7 @@ _HANDLERS = {
     "list_screenshots": screenshot.handle_list_screenshots,
     "simulate_tap": touch.handle_simulate_tap,
     "get_display_info": touch.handle_get_display_info,
+    **social.HANDLERS,  # Social media handlers
 }
 
 
