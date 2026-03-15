@@ -15,22 +15,20 @@ TOOL = Tool(
         "Update a Trello card: move between lanes, add/remove labels, "
         "toggle checklist items, update name/description/due date.\n\n"
         "WORKFLOW RULES (enforced):\n"
-        "  ideas -> planning -> blocked_plan/backlog\n"
-        "  blocked_plan -> planning\n"
-        "  backlog -> in_progress -> blocked_work/done\n"
-        "  blocked_work -> in_progress\n\n"
+        "  backlog -> in_progress -> blocked/done\n"
+        "  blocked -> in_progress\n\n"
         "CRITICAL WORKFLOW GUIDANCE:\n"
-        "- When a card in 'planning' has a user comment/CTA that needs a response: "
-        "respond via comment_trello_card, then move to blocked_plan. "
-        "Do NOT leave it in planning or start implementing.\n"
+        "- Do NOT pick up cards labelled 'no-ai' — those are for the user only.\n"
+        "- When a card has a user comment/CTA that needs a response: "
+        "respond via comment_trello_card, then move to blocked with a "
+        "blocked_reason explaining what you need from the user.\n"
         "- When you've responded to a user and need their review/approval, "
-        "ALWAYS move to blocked_plan or blocked_work — never leave cards waiting "
+        "ALWAYS move to blocked — never leave cards waiting "
         "for user input in a non-blocked lane.\n"
-        "- Never start coding on a card unless it's in backlog or in_progress.\n"
-        "- Moving to blocked_plan or blocked_work requires blocked_reason.\n"
         "- Never leave a card in 'in_progress' without resolution. "
-        "If you cannot complete the work, move it to 'blocked_work'.\n\n"
-        "Labels: bug, priority, ai-created, needs-screenshot, shareable"
+        "If you cannot complete the work, move it to 'blocked'.\n"
+        "- Moving to blocked requires blocked_reason.\n\n"
+        "Labels: bug, priority, ai-created, needs-screenshot, shareable, no-ai"
     ),
     inputSchema={
         "type": "object",
@@ -45,7 +43,7 @@ TOOL = Tool(
             },
             "blocked_reason": {
                 "type": "string",
-                "description": "REQUIRED when moving to blocked_plan or blocked_work. Explains what's blocking progress and what the user needs to do."
+                "description": "REQUIRED when moving to blocked. Explains what's blocking progress and what the user needs to do."
             },
             "add_labels": {
                 "type": "array",
@@ -105,8 +103,8 @@ async def handle(arguments: dict) -> list[TextContent]:
                 text=f"Error: Unknown lane '{lane}'. Valid: {', '.join(LANE_NAMES.keys())}"
             )]
 
-        # Require blocked_reason for blocked lanes
-        if lane in ("blocked_plan", "blocked_work") and not blocked_reason:
+        # Require blocked_reason for blocked lane
+        if lane == "blocked" and not blocked_reason:
             return [TextContent(
                 type="text",
                 text=f"Error: blocked_reason is required when moving to {LANE_NAMES[lane]}. "
@@ -150,7 +148,7 @@ async def handle(arguments: dict) -> list[TextContent]:
             return [TextContent(type="text", text=f"Error moving card: {e}")]
 
         # Auto-post blocked_reason as a comment
-        if blocked_reason and lane in ("blocked_plan", "blocked_work"):
+        if blocked_reason and lane == "blocked":
             try:
                 await trello_request(
                     "POST", f"/cards/{card_id}/actions/comments",

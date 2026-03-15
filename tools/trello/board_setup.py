@@ -15,9 +15,9 @@ TOOL = Tool(
         "Create or map workflow lanes and labels on the configured Trello board. "
         "Scans existing lists and labels, matches by exact name (case-insensitive), "
         "and creates anything missing.\n\n"
-        "Expected lanes: Ideas, Planning, Blocked:Plan, Backlog, In Progress, Blocked:Work, Done\n"
+        "Expected lanes: Backlog, In Progress, Blocked, Done\n"
         "Expected labels: bug (red), priority (yellow), ai-created (purple), "
-        "needs-screenshot (orange), shareable (pink)\n\n"
+        "needs-screenshot (orange), shareable (pink), no-ai (black)\n\n"
         "Use mode='map' to manually assign existing lists to roles instead of auto-matching."
     ),
     inputSchema={
@@ -30,7 +30,7 @@ TOOL = Tool(
             },
             "lane_assignments": {
                 "type": "object",
-                "description": "For mode='map': object mapping role names to existing Trello list IDs. Roles: ideas, planning, blocked_plan, backlog, in_progress, blocked_work, done."
+                "description": "For mode='map': object mapping role names to existing Trello list IDs. Roles: backlog, in_progress, blocked, done."
             }
         },
         "required": []

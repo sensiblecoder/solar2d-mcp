@@ -19,10 +19,11 @@ TOOL = Tool(
     description=(
         "List cards on the configured Trello board, optionally filtered by lane and/or label. "
         "Cards with the 'priority' label are sorted first. "
-        "Lanes: ideas, planning, blocked_plan, backlog, in_progress, blocked_work, done.\n\n"
+        "Lanes: backlog, in_progress, blocked, done.\n\n"
         "WORKFLOW: Before working on any card, ALWAYS use get_trello_card to read its "
         "full details and comments. Comments may contain user CTAs that change what "
-        "you should do next. Never skip reading comments before acting on a card."
+        "you should do next. Never skip reading comments before acting on a card.\n"
+        "Skip cards labelled 'no-ai' — those are for the user only."
     ),
     inputSchema={
         "type": "object",
@@ -105,7 +106,7 @@ async def handle(arguments: dict) -> list[TextContent]:
     priority_label_id = label_map.get("priority")
     all_sections = []
 
-    stale_lanes = {"in_progress", "blocked_plan", "blocked_work"}
+    stale_lanes = {"in_progress", "blocked"}
     stale_warnings = []
     now = datetime.now(timezone.utc)
 
@@ -180,7 +181,7 @@ async def handle(arguments: dict) -> list[TextContent]:
             if role == "in_progress":
                 warning_lines.append(
                     f"  - \"{name}\" ({cid}) has been In Progress for {days}d. "
-                    f"Move to 'done' or 'blocked_work' (with blocked_reason)."
+                    f"Move to 'done' or 'blocked' (with blocked_reason)."
                 )
             else:
                 warning_lines.append(

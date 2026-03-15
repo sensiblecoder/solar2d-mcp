@@ -11,25 +11,18 @@ API_BASE = "https://api.trello.com/1"
 
 # Workflow lane names (role -> expected Trello list name)
 LANE_NAMES = {
-    "ideas": "Ideas",
-    "planning": "Planning",
-    "blocked_plan": "Blocked:Plan",
     "backlog": "Backlog",
     "in_progress": "In Progress",
-    "blocked_work": "Blocked:Work",
+    "blocked": "Blocked",
     "done": "Done",
 }
 
 # Valid lane transitions — each lane lists where it can move to.
-# Enforces the workflow: cards can only advance one step (or go to/from blocked).
 VALID_TRANSITIONS = {
-    "ideas":        ["planning"],
-    "planning":     ["blocked_plan", "backlog"],
-    "blocked_plan": ["planning"],
-    "backlog":      ["in_progress"],
-    "in_progress":  ["blocked_work", "done"],
-    "blocked_work": ["in_progress"],
-    "done":         [],  # terminal
+    "backlog":     ["in_progress"],
+    "in_progress": ["blocked", "done"],
+    "blocked":     ["in_progress"],
+    "done":        [],  # terminal
 }
 
 # Label definitions (name -> color)
@@ -39,6 +32,7 @@ LABEL_DEFS = {
     "ai-created": "purple",
     "needs-screenshot": "orange",
     "shareable": "pink",
+    "no-ai": "black",
 }
 
 

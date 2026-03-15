@@ -17,10 +17,11 @@ TOOL = Tool(
         "When the latest comment is a CTA (question, request, feedback):\n"
         "  1. DO NOT start implementing or writing code\n"
         "  2. Respond to the CTA by adding a comment with your analysis/plan/answer\n"
-        "  3. Move the card to blocked_plan — it needs user review before proceeding\n"
-        "  4. Only move to backlog/in_progress AFTER the user unblocks it\n\n"
+        "  3. Move the card to blocked — it needs user review before proceeding\n"
+        "  4. Only move to in_progress AFTER the user unblocks it\n\n"
+        "Do NOT pick up cards labelled 'no-ai' — those are for the user only.\n"
         "The card's lane must always reflect its true status. If you need user input, "
-        "the card belongs in blocked_plan, not planning."
+        "the card belongs in blocked."
     ),
     inputSchema={
         "type": "object",

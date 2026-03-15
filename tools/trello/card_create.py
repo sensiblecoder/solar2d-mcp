@@ -13,8 +13,8 @@ TOOL = Tool(
     description=(
         "Create a new Trello card in a specified lane with optional labels, description, "
         "due date, and checklist items.\n\n"
-        "Lanes: ideas, planning, blocked_plan, backlog, in_progress, blocked_work, done\n"
-        "Labels: bug, priority, ai-created, needs-screenshot, shareable"
+        "Lanes: backlog, in_progress, blocked, done\n"
+        "Labels: bug, priority, ai-created, needs-screenshot, shareable, no-ai"
     ),
     inputSchema={
         "type": "object",
@@ -25,7 +25,7 @@ TOOL = Tool(
             },
             "lane": {
                 "type": "string",
-                "description": "Lane to place the card in (e.g. 'backlog', 'planning')"
+                "description": "Lane to place the card in (e.g. 'backlog', 'in_progress')"
             },
             "description": {
                 "type": "string",
