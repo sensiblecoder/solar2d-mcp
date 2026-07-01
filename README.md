@@ -121,16 +121,45 @@ Assistant: [calls configure_solar2d(confirm=true)]
   - Uses percentage-based bounding box (left, right, top, bottom)
   - Taps the center of the specified area
   - Example: button at 30-50% horizontal, 60-70% vertical
+- `simulate_drag` - Drag/swipe between two points on the simulator screen
+  - Percentage-based start and end bounding boxes
+  - Configurable drag duration
+  - Useful for swipes, card plays, and sliders
+- `find_object` - Locate touchable display objects on screen
+  - Reports positions so taps/drags can be targeted precisely
 - `get_display_info` - Get display coordinate system info
+
+#### Game State & Scenarios
+
+- `get_game_state` - Get structured game state as JSON
+  - Returns current scene, combat state, player stats, and UI state
+  - Much faster and more reliable than parsing screenshots
+- `run_scenario` - Configure and launch a test scenario without restarting
+  - Load a saved scenario from `scenarios/` or pass settings inline
+  - Optionally seed `math.random` for deterministic replay
+  - Supports scripted scenarios with a `steps` array that runs a
+    pass/fail test (actions: `wait_for`, `verify`, `wait`, `tap`, `drag`,
+    `play_card`, `tap_stat`, `tap_choice`)
+- `list_scenarios` - List saved scenario files from the project's `scenarios/` folder
 
 ### Resources
 
 - `solar2d://info` - Server information
 
+### Experimental / WIP
+
+These integrations are in progress and their tool surface may change:
+
+- **Trello** - Manage a project board from the assistant:
+  `configure_trello`, `setup_trello_board`, `create_trello_card`,
+  `list_trello_cards`, `get_trello_card`, `update_trello_card`,
+  `comment_trello_card`, `attach_to_trello_card`
+- **Social media** - Draft and publish posts:
+  `configure_social_media`, `preview_social_post`, `publish_social_post`
+
 ### Possible Plans
 
 - More complex ability to "play", based on "watching"
-- Swipe/drag gestures
 - Built-in Skills
   - Conventions & Good Practices
   - Common Patterns / Templates
@@ -153,7 +182,10 @@ solar2d-mcp/
 │   ├── read_logs.py   # read_solar2d_logs tool
 │   ├── list_projects.py # list_running_projects tool
 │   ├── screenshot.py  # Screenshot recording tools
-│   └── touch.py       # Touch simulation tools
+│   ├── touch.py       # Touch/drag simulation tools
+│   ├── state.py       # Game state & test scenario tools
+│   ├── social/        # Social media tools (experimental)
+│   └── trello/        # Trello board tools (experimental)
 ├── resources/
 │   ├── __init__.py    # Resource dispatcher
 │   └── info.py        # solar2d://info resource
