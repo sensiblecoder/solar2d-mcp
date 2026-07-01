@@ -7,10 +7,21 @@ import os
 import tempfile
 from pathlib import Path
 
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
 from utils import find_main_lua
 
+# Duration in seconds for auto-recording on each interaction
+AUTO_RECORD_SECONDS = 3
+
+
+def _start_auto_recording(project_name: str):
+    """Start a short screenshot recording to capture interaction visuals."""
+    control_file = os.path.join(
+        tempfile.gettempdir(), f"solar2d_screenshots_{project_name}.control"
+    )
+    with open(control_file, 'w') as f:
+        f.write(str(AUTO_RECORD_SECONDS))
 
 # Tool definitions
 SIMULATE_TAP_TOOL = Tool(
@@ -56,6 +67,42 @@ GET_DISPLAY_INFO_TOOL = Tool(
             }
         },
         "required": ["project_path"]
+    }
+)
+
+FIND_OBJECT_TOOL = Tool(
+    name="find_object",
+    description="Draw a persistent green rectangle around an area of interest in the Solar2D simulator. Useful for highlighting UI elements, objects, or regions. The rectangle stays on screen until the next tap, drag, or find interaction.",
+    inputSchema={
+        "type": "object",
+        "properties": {
+            "project_path": {
+                "type": "string",
+                "description": "Path to the project directory or main.lua file"
+            },
+            "left": {
+                "type": "number",
+                "description": "Left edge of target as percentage (0=left edge of screen)"
+            },
+            "right": {
+                "type": "number",
+                "description": "Right edge of target as percentage (100=right edge of screen)"
+            },
+            "top": {
+                "type": "number",
+                "description": "Top edge of target as percentage (0=top of screen)"
+            },
+            "bottom": {
+                "type": "number",
+                "description": "Bottom edge of target as percentage (100=bottom of screen)"
+            },
+            "label": {
+                "type": "string",
+                "description": "Optional label to display above the rectangle",
+                "default": ""
+            }
+        },
+        "required": ["project_path", "left", "right", "top", "bottom"]
     }
 )
 
@@ -113,7 +160,7 @@ SIMULATE_DRAG_TOOL = Tool(
 )
 
 # Export all tools
-TOOLS = [SIMULATE_TAP_TOOL, SIMULATE_DRAG_TOOL, GET_DISPLAY_INFO_TOOL]
+TOOLS = [SIMULATE_TAP_TOOL, SIMULATE_DRAG_TOOL, FIND_OBJECT_TOOL, GET_DISPLAY_INFO_TOOL]
 
 
 def _get_project_name(project_path: str) -> str:
@@ -176,6 +223,9 @@ async def handle_simulate_tap(arguments: dict) -> list[TextContent]:
     except Exception as e:
         return [TextContent(type="text", text=f"Error reading display info: {str(e)}")]
 
+    # Start auto-recording before the tap
+    _start_auto_recording(project_name)
+
     # Write tap command to control file
     command = f"tap,{x},{y}"
     with open(control_file, 'w') as f:
@@ -184,6 +234,63 @@ async def handle_simulate_tap(arguments: dict) -> list[TextContent]:
     return [TextContent(
         type="text",
         text=f"Tap sent to center of box ({left}-{right}%, {top}-{bottom}%)"
+    )]
+
+
+async def handle_find_object(arguments: dict) -> list[TextContent]:
+    """Handle find_object tool call."""
+    project_path = arguments.get("project_path")
+    left = arguments.get("left")
+    right = arguments.get("right")
+    top = arguments.get("top")
+    bottom = arguments.get("bottom")
+    label = arguments.get("label", "")
+
+    if not project_path:
+        return [TextContent(type="text", text="Error: project_path is required")]
+
+    if None in (left, right, top, bottom):
+        return [TextContent(type="text", text="Error: left, right, top, bottom are all required")]
+
+    project_name = _get_project_name(project_path)
+    control_file = _get_control_file(project_name)
+    info_file = _get_info_file(project_name)
+
+    if not os.path.exists(info_file):
+        return [TextContent(
+            type="text",
+            text="Display info not found. Make sure the simulator is running."
+        )]
+
+    try:
+        with open(info_file, 'r') as f:
+            info = json.load(f)
+        content_width = info.get('contentWidth')
+        content_height = info.get('contentHeight')
+
+        if not content_width or not content_height:
+            return [TextContent(type="text", text="Error: Invalid display info")]
+
+        x1 = int(content_width * left / 100)
+        y1 = int(content_height * top / 100)
+        x2 = int(content_width * right / 100)
+        y2 = int(content_height * bottom / 100)
+
+    except Exception as e:
+        return [TextContent(type="text", text=f"Error reading display info: {str(e)}")]
+
+    # Start auto-recording before the find
+    _start_auto_recording(project_name)
+
+    # Write find command to control file
+    command = f"find,{x1},{y1},{x2},{y2},{label}"
+    with open(control_file, 'w') as f:
+        f.write(command)
+
+    label_msg = f" label=\"{label}\"" if label else ""
+    return [TextContent(
+        type="text",
+        text=f"Find rectangle drawn at ({left}-{right}%, {top}-{bottom}%){label_msg}"
     )]
 
 
@@ -241,6 +348,9 @@ async def handle_simulate_drag(arguments: dict) -> list[TextContent]:
 
     except Exception as e:
         return [TextContent(type="text", text=f"Error reading display info: {str(e)}")]
+
+    # Start auto-recording before the drag
+    _start_auto_recording(project_name)
 
     # Write drag command to control file
     command = f"drag,{x1},{y1},{x2},{y2},{int(duration)}"

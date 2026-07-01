@@ -6,10 +6,15 @@ httpx is required for all Trello API calls.
 """
 
 from tools.trello import (
-    configure, board_setup, cards_list, card_detail,
-    card_create, card_update, card_comment, card_attach,
+    board_setup,
+    card_attach,
+    card_comment,
+    card_create,
+    card_detail,
+    card_update,
+    cards_list,
+    configure,
 )
-
 
 TOOLS = [
     configure.TOOL,

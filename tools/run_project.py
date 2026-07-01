@@ -3,16 +3,15 @@ run_solar2d_project tool - Run a Solar2D project in the simulator.
 """
 
 import os
-import shutil
+import signal
 import subprocess
 import tempfile
 from pathlib import Path
 
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
-from utils import find_main_lua, running_projects
 import config
-
+from utils import find_main_lua, running_projects
 
 TOOL = Tool(
     name="run_solar2d_project",
@@ -258,6 +257,48 @@ local json = require("json")
 local touchTarget = nil
 local touchStartX, touchStartY = 0, 0
 
+-- Overlay group — fades out after each interaction
+local overlayGroup = nil
+local fadeHandle = nil
+local fadeDelay = 25000
+local fadeTime = 5000
+
+local function clearOverlay()
+    if fadeHandle then
+        transition.cancel(fadeHandle)
+        fadeHandle = nil
+    end
+    if overlayGroup then
+        display.remove(overlayGroup)
+    end
+    overlayGroup = display.newGroup()
+    overlayGroup.alpha = 1
+    -- Keep overlay on top every frame
+    Runtime:addEventListener("enterFrame", function()
+        if overlayGroup and overlayGroup.removeSelf then
+            display.getCurrentStage():insert(overlayGroup)
+        end
+    end)
+end
+
+local function scheduleFade()
+    local group = overlayGroup
+    if not group then return end
+    if fadeHandle then transition.cancel(fadeHandle) end
+    fadeHandle = transition.to(group, {{
+        delay = fadeDelay,
+        time = fadeTime,
+        alpha = 0,
+        onComplete = function()
+            if group and group.removeSelf then
+                display.remove(group)
+            end
+            if overlayGroup == group then overlayGroup = nil end
+            fadeHandle = nil
+        end
+    }})
+end
+
 -- Helper to read and consume control file
 local function readControlFile()
     local file = io.open(controlFile, "r")
@@ -375,14 +416,53 @@ local function writeDisplayInfo()
     end
 end
 
+-- Show a persistent visual indicator at the tap/drag point
+local function showTouchIndicator(x, y, isTap)
+    local radius = isTap and 20 or 12
+    local circle = display.newCircle(overlayGroup, x, y, radius)
+    circle:setFillColor(1, 0, 0, 0.5)
+    circle:setStrokeColor(1, 1, 0)
+    circle.strokeWidth = 3
+    local hLine = display.newLine(overlayGroup, x - radius, y, x + radius, y)
+    hLine:setStrokeColor(1, 1, 0, 0.8)
+    hLine.strokeWidth = 1
+    local vLine = display.newLine(overlayGroup, x, y - radius, x, y + radius)
+    vLine:setStrokeColor(1, 1, 0, 0.8)
+    vLine.strokeWidth = 1
+end
+
+-- Show a persistent trail dot during drag movement
+local function showDragDot(x, y)
+    local dot = display.newCircle(overlayGroup, x, y, 5)
+    dot:setFillColor(1, 0.5, 0, 0.6)
+end
+
+-- Show a persistent rectangle around a found object
+local function showFindRect(x1, y1, x2, y2, label)
+    local w = x2 - x1
+    local h = y2 - y1
+    local cx = x1 + w / 2
+    local cy = y1 + h / 2
+    local rect = display.newRect(overlayGroup, cx, cy, w, h)
+    rect:setFillColor(0, 0, 0, 0)
+    rect:setStrokeColor(1, 0, 0)
+    rect.strokeWidth = 3
+    if label and label ~= "" then
+        local labelBg = display.newRoundedRect(overlayGroup, cx, y1 - 16, 10, 24, 4)
+        local labelObj = display.newText(overlayGroup, label, cx, y1 - 16, native.systemFontBold, 18)
+        labelObj:setFillColor(1, 0, 0)
+        labelBg.width = labelObj.width + 12
+        labelBg:setFillColor(0, 0, 0, 0.7)
+    end
+end
+
 -- Execute a tap at coordinates
 local function executeTap(x, y)
     print("[MCP Touch] Tap at (" .. x .. ", " .. y .. ")")
-
-    -- Dispatch "began" phase
+    clearOverlay()
+    showTouchIndicator(x, y, true)
+    scheduleFade()
     dispatchTouch("began", x, y)
-
-    -- Short delay, then dispatch "ended" phase
     timer.performWithDelay(50, function()
         dispatchTouch("ended", x, y)
     end)
@@ -391,29 +471,34 @@ end
 -- Execute a drag from (x1,y1) to (x2,y2) over duration ms
 local function executeDrag(x1, y1, x2, y2, duration)
     print("[MCP Touch] Drag from (" .. x1 .. ", " .. y1 .. ") to (" .. x2 .. ", " .. y2 .. ") over " .. duration .. "ms")
-
-    local steps = math.max(1, math.floor(duration / 16))  -- ~60fps
+    clearOverlay()
+    showTouchIndicator(x1, y1, false)
+    local steps = math.max(1, math.floor(duration / 16))
     local stepDelay = duration / steps
-
-    -- Dispatch "began" at start position
     dispatchTouch("began", x1, y1)
-
-    -- Dispatch "moved" events at interpolated positions
     for i = 1, steps do
         timer.performWithDelay(math.floor(stepDelay * i), function()
             local t = i / steps
             local x = x1 + (x2 - x1) * t
             local y = y1 + (y2 - y1) * t
+            if i % 3 == 0 then showDragDot(x, y) end
             dispatchTouch("moved", x, y)
-
-            -- Dispatch "ended" after the final moved event
             if i == steps then
+                showTouchIndicator(x2, y2, false)
+                scheduleFade()
                 timer.performWithDelay(16, function()
                     dispatchTouch("ended", x2, y2)
                 end)
             end
         end)
     end
+end
+
+-- Execute a find — draw rectangle around an area
+local function executeFind(x1, y1, x2, y2, label)
+    print("[MCP Touch] Find at (" .. x1 .. ", " .. y1 .. ") to (" .. x2 .. ", " .. y2 .. ")" .. (label and (" label=" .. label) or ""))
+    clearOverlay()
+    showFindRect(x1, y1, x2, y2, label)
 end
 
 -- Check control file for commands
@@ -442,6 +527,17 @@ local function checkControl()
             else
                 print("[MCP Touch] Invalid drag parameters")
             end
+        elseif cmd == "find" then
+            local x1 = tonumber(parts[2])
+            local y1 = tonumber(parts[3])
+            local x2 = tonumber(parts[4])
+            local y2 = tonumber(parts[5])
+            local label = parts[6] or ""
+            if x1 and y1 and x2 and y2 then
+                executeFind(x1, y1, x2, y2, label)
+            else
+                print("[MCP Touch] Invalid find parameters")
+            end
         else
             print("[MCP Touch] Unknown command: " .. tostring(cmd))
         end
@@ -461,6 +557,165 @@ timer.performWithDelay(checkInterval, checkControl, 0)
         f.write(lua_touch)
 
     return touch_path
+
+
+def create_touch_overlay_module(project_dir: str) -> str:
+    """Create Lua module for visual touch indicators (crosshairs, drag trails, find rectangles)."""
+    lua_overlay = '''
+-- MCP Touch Overlay: Persistent visual indicators for tap/drag/find
+-- Auto-generated by MCP server
+-- Indicators persist until the next interaction clears them
+
+local overlayGroup = nil
+local fadeHandle = nil
+local fadeDelay = 25000
+local fadeTime = 5000
+
+local function clearOverlay()
+    if fadeHandle then
+        transition.cancel(fadeHandle)
+        fadeHandle = nil
+    end
+    if overlayGroup then
+        display.remove(overlayGroup)
+    end
+    overlayGroup = display.newGroup()
+    overlayGroup.alpha = 1
+    Runtime:addEventListener("enterFrame", function()
+        if overlayGroup and overlayGroup.removeSelf then
+            display.getCurrentStage():insert(overlayGroup)
+        end
+    end)
+end
+
+local function scheduleFade()
+    local group = overlayGroup
+    if not group then return end
+    if fadeHandle then transition.cancel(fadeHandle) end
+    fadeHandle = transition.to(group, {
+        delay = fadeDelay,
+        time = fadeTime,
+        alpha = 0,
+        onComplete = function()
+            if group and group.removeSelf then
+                display.remove(group)
+            end
+            if overlayGroup == group then overlayGroup = nil end
+            fadeHandle = nil
+        end
+    })
+end
+
+local function showIndicator(x, y, isTap)
+    local radius = isTap and 30 or 18
+    local g = display.newGroup()
+    overlayGroup:insert(g)
+    local circle = display.newCircle(g, x, y, radius)
+    circle:setFillColor(1, 0, 0, 0.5)
+    circle:setStrokeColor(1, 1, 0)
+    circle.strokeWidth = 4
+    local h = display.newLine(g, x - radius - 8, y, x + radius + 8, y)
+    h:setStrokeColor(1, 1, 0, 0.9)
+    h.strokeWidth = 3
+    local v = display.newLine(g, x, y - radius - 8, x, y + radius + 8)
+    v:setStrokeColor(1, 1, 0, 0.9)
+    v.strokeWidth = 3
+    local labelText = x .. ", " .. y
+    local cw = display.contentWidth or 1080
+    local ch = display.contentHeight or 1920
+    local labelW, labelH = 160, 40
+    local margin = ch * 0.15
+    local lx = x + radius + 90
+    if lx + labelW / 2 > cw then
+        lx = x - radius - 90
+    end
+    local ly = y - radius - 30
+    if y < margin then
+        ly = y + radius + 30
+    end
+    local labelBg = display.newRoundedRect(g, lx, ly, labelW, labelH, 8)
+    labelBg:setFillColor(0, 0, 0, 0.7)
+    local label = display.newText(g, labelText, lx, ly, native.systemFontBold, 32)
+    label:setFillColor(1, 1, 0)
+end
+
+local function showDragDot(x, y)
+    local dot = display.newCircle(overlayGroup, x, y, 12)
+    dot:setFillColor(1, 0.5, 0, 0.9)
+    dot:setStrokeColor(1, 1, 0, 0.5)
+    dot.strokeWidth = 2
+end
+
+local function showFindRect(x1, y1, x2, y2, label)
+    local w = x2 - x1
+    local h = y2 - y1
+    local cx = x1 + w / 2
+    local cy = y1 + h / 2
+    local rect = display.newRect(overlayGroup, cx, cy, w, h)
+    rect:setFillColor(0, 0, 0, 0)
+    rect:setStrokeColor(1, 0, 0)
+    rect.strokeWidth = 4
+    if label and label ~= "" then
+        local labelBg = display.newRoundedRect(overlayGroup, cx, y1 - 20, 10, 32, 6)
+        local labelObj = display.newText(overlayGroup, label, cx, y1 - 20, native.systemFontBold, 24)
+        labelObj:setFillColor(1, 0, 0)
+        labelBg.width = labelObj.width + 16
+        labelBg:setFillColor(0, 0, 0, 0.7)
+    end
+end
+
+local function hookMcpTouch()
+    local current_print = _G.print
+    _G.print = function(...)
+        local args = {...}
+        local msg = tostring(args[1] or "")
+        local tx, ty = msg:match("%[MCP Touch%] Tap at %((%d+), (%d+)%)")
+        if tx and ty then
+            clearOverlay()
+            showIndicator(tonumber(tx), tonumber(ty), true)
+            scheduleFade()
+        end
+        local dx1, dy1, dx2, dy2 = msg:match(
+            "%[MCP Touch%] Drag from %((%d+), (%d+)%) to %((%d+), (%d+)%)")
+        if dx1 then
+            clearOverlay()
+            local x1, y1 = tonumber(dx1), tonumber(dy1)
+            local x2, y2 = tonumber(dx2), tonumber(dy2)
+            showIndicator(x1, y1, false)
+            local numDots = 40
+            for d = 1, numDots do
+                local t = d / numDots
+                local dotX = x1 + (x2 - x1) * t
+                local dotY = y1 + (y2 - y1) * t
+                timer.performWithDelay(d * 25, function()
+                    showDragDot(dotX, dotY)
+                end)
+            end
+            timer.performWithDelay(numDots * 25 + 100, function()
+                showIndicator(x2, y2, false)
+                scheduleFade()
+            end)
+        end
+        local fx1, fy1, fx2, fy2 = msg:match(
+            "%[MCP Touch%] Find at %((%d+), (%d+)%) to %((%d+), (%d+)%)")
+        if fx1 then
+            clearOverlay()
+            local flabel = msg:match("label=(.+)$") or ""
+            showFindRect(tonumber(fx1), tonumber(fy1), tonumber(fx2), tonumber(fy2), flabel)
+        end
+        current_print(...)
+    end
+end
+
+timer.performWithDelay(1000, hookMcpTouch)
+print("[MCP Touch Overlay] Initialized - persistent visual indicators enabled")
+'''
+
+    overlay_path = os.path.join(project_dir, "_mcp_touch_overlay.lua")
+    with open(overlay_path, 'w') as f:
+        f.write(lua_overlay)
+
+    return overlay_path
 
 
 def inject_module_into_main_lua(main_lua_path: str, module_name: str) -> bool:
@@ -509,7 +764,7 @@ def inject_module_into_main_lua(main_lua_path: str, module_name: str) -> bool:
 
         return True  # Successfully injected
 
-    except Exception as e:
+    except Exception:
         # If we can't modify the file, just return False
         return False
 
@@ -557,7 +812,7 @@ def inject_logger_into_main_lua(main_lua_path: str) -> bool:
 
         return True  # Successfully injected
 
-    except Exception as e:
+    except Exception:
         # If we can't modify the file, just return False
         return False
 
@@ -596,23 +851,36 @@ async def handle(arguments: dict) -> list[TextContent]:
     if not simulator_path or not os.path.exists(simulator_path):
         return [TextContent(
             type="text",
-            text=f"Error: Solar2D Simulator not found. Please run configure_solar2d to set the path."
+            text="Error: Solar2D Simulator not found. Please run configure_solar2d to set the path."
         )]
 
     # Find main.lua
     main_lua_path = find_main_lua(project_path)
     project_dir = str(Path(main_lua_path).parent)
 
-    # Close any existing simulator for this project
-    if project_dir in running_projects:
-        old_process = running_projects[project_dir]["process"]
-        if old_process.poll() is None:  # Still running
+    # Kill any running simulators — only one can run at a time
+    # First, clean up any we're tracking
+    for old_dir in list(running_projects.keys()):
+        old_process = running_projects[old_dir]["process"]
+        if old_process.poll() is None:
             old_process.terminate()
             try:
                 old_process.wait(timeout=2)
             except subprocess.TimeoutExpired:
                 old_process.kill()
-        del running_projects[project_dir]
+        del running_projects[old_dir]
+
+    # Also kill any simulator processes we're NOT tracking (e.g. launched externally or before server restart)
+    try:
+        result = subprocess.run(["pgrep", "-f", "Corona Simulator"], capture_output=True, text=True)
+        for pid_str in result.stdout.strip().splitlines():
+            try:
+                pid = int(pid_str)
+                os.kill(pid, signal.SIGTERM)
+            except (ValueError, ProcessLookupError, PermissionError):
+                pass
+    except FileNotFoundError:
+        pass
 
     # Check if main.lua exists
     if not os.path.exists(main_lua_path):
@@ -626,18 +894,22 @@ async def handle(arguments: dict) -> list[TextContent]:
     log_file = os.path.join(tempfile.gettempdir(), f"corona_log_{project_name}.txt")
 
     # Create Lua logging wrapper
-    logger_path = create_logging_wrapper(project_dir, log_file)
+    create_logging_wrapper(project_dir, log_file)
 
     # Create screenshot module
-    screenshot_path = create_screenshot_module(project_dir, project_name)
+    create_screenshot_module(project_dir, project_name)
 
     # Create touch module
-    touch_path = create_touch_module(project_dir, project_name)
+    create_touch_module(project_dir, project_name)
+
+    # Create touch overlay module (visual indicators)
+    create_touch_overlay_module(project_dir)
 
     # Inject modules into main.lua if not already present
     logger_injected = inject_module_into_main_lua(main_lua_path, "_mcp_logger")
     screenshot_injected = inject_module_into_main_lua(main_lua_path, "_mcp_screenshot")
     touch_injected = inject_module_into_main_lua(main_lua_path, "_mcp_touch")
+    inject_module_into_main_lua(main_lua_path, "_mcp_touch_overlay")
 
     # Build the command
     cmd = [simulator_path]
@@ -651,11 +923,16 @@ async def handle(arguments: dict) -> list[TextContent]:
     cmd.extend(["-project", main_lua_path])
 
     try:
-        # Run the simulator (non-blocking)
-        # Don't capture stdout/stderr - let _mcp_logger.lua handle all logging
+        # Run the simulator (non-blocking). This MCP server uses stdio for
+        # JSON-RPC, so the child process must not inherit those descriptors.
+        # _mcp_logger.lua handles app logging through a separate file.
         process = subprocess.Popen(
             cmd,
-            start_new_session=True
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True
         )
 
         # Track the running project

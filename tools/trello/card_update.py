@@ -2,11 +2,15 @@
 Trello card update — move between lanes, add/remove labels, toggle checklist items.
 """
 
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
 from tools.trello.client import (
-    resolve_lane_id, resolve_lane_role, get_label_map,
-    trello_request, LANE_NAMES, VALID_TRANSITIONS,
+    LANE_NAMES,
+    VALID_TRANSITIONS,
+    get_label_map,
+    resolve_lane_id,
+    resolve_lane_role,
+    trello_request,
 )
 
 TOOL = Tool(
@@ -80,7 +84,7 @@ TOOL = Tool(
 async def handle(arguments: dict) -> list[TextContent]:
     """Handle update_trello_card tool call."""
     try:
-        import httpx
+        import httpx  # noqa: F401
     except ImportError:
         return [TextContent(
             type="text",

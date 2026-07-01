@@ -2,10 +2,9 @@
 Social media configuration — save/retrieve Late API key.
 """
 
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
 from config import _load_config, _save_config
-
 
 TOOL = Tool(
     name="configure_social_media",

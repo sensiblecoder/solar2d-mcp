@@ -4,10 +4,9 @@ configure_solar2d tool - Configure the Solar2D simulator path.
 
 import os
 
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
 import config
-
 
 TOOL = Tool(
     name="configure_solar2d",

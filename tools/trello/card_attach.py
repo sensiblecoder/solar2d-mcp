@@ -4,9 +4,9 @@ Trello card attachment — attach a file or simulator screenshot to a card.
 
 import os
 
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
-from tools.trello.client import trello_request, trello_upload
+from tools.trello.client import trello_upload
 
 TOOL = Tool(
     name="attach_to_trello_card",
@@ -47,7 +47,7 @@ TOOL = Tool(
 async def handle(arguments: dict) -> list[TextContent]:
     """Handle attach_to_trello_card tool call."""
     try:
-        import httpx
+        import httpx  # noqa: F401
     except ImportError:
         return [TextContent(
             type="text",

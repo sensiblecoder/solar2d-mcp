@@ -4,11 +4,15 @@ Trello card listing — list cards by lane with optional label filtering and pri
 
 from datetime import datetime, timezone
 
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
 from tools.trello.client import (
-    get_board_id, get_lane_map, get_label_map, resolve_lane_id,
-    trello_request, LANE_NAMES,
+    LANE_NAMES,
+    get_board_id,
+    get_label_map,
+    get_lane_map,
+    resolve_lane_id,
+    trello_request,
 )
 
 # Cards in in_progress or blocked lanes for longer than this get flagged
@@ -45,7 +49,7 @@ TOOL = Tool(
 async def handle(arguments: dict) -> list[TextContent]:
     """Handle list_trello_cards tool call."""
     try:
-        import httpx
+        import httpx  # noqa: F401
     except ImportError:
         return [TextContent(
             type="text",
@@ -98,9 +102,6 @@ async def handle(arguments: dict) -> list[TextContent]:
                 type="text",
                 text=f"Error: Unknown label '{label_filter}'. Valid: {', '.join(label_map.keys())}"
             )]
-
-    # Build reverse map: list_id -> role name
-    id_to_role = {v: k for k, v in lane_map.items()}
 
     # Fetch cards for each list
     priority_label_id = label_map.get("priority")

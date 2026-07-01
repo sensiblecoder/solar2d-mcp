@@ -2,10 +2,11 @@
 Trello configuration — save API key, token, and select board.
 """
 
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
 from tools.trello.client import (
-    get_trello_config, save_trello_config, get_auth_params, API_BASE,
+    get_trello_config,
+    save_trello_config,
 )
 
 TOOL = Tool(
@@ -104,7 +105,7 @@ async def handle(arguments: dict) -> list[TextContent]:
     masked_key = tc["api_key"][:8] + "..."
     lines = [
         f"Trello API key saved: {masked_key}",
-        f"Token saved.",
+        "Token saved.",
         "",
         "Your boards:",
     ]

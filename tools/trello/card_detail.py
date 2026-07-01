@@ -2,9 +2,9 @@
 Trello card detail — full card info including description, checklist, comments, attachments.
 """
 
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
-from tools.trello.client import get_label_map, resolve_lane_role, trello_request, LANE_NAMES
+from tools.trello.client import LANE_NAMES, get_label_map, resolve_lane_role, trello_request
 
 TOOL = Tool(
     name="get_trello_card",
@@ -39,7 +39,7 @@ TOOL = Tool(
 async def handle(arguments: dict) -> list[TextContent]:
     """Handle get_trello_card tool call."""
     try:
-        import httpx
+        import httpx  # noqa: F401
     except ImportError:
         return [TextContent(
             type="text",

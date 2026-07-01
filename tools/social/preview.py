@@ -10,10 +10,9 @@ import webbrowser
 from io import BytesIO
 from pathlib import Path
 
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
 from utils import find_main_lua
-
 
 TOOL = Tool(
     name="preview_social_post",

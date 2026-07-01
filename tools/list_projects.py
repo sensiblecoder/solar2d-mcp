@@ -2,10 +2,9 @@
 list_running_projects tool - List all running Solar2D Simulator projects.
 """
 
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
 from utils import running_projects
-
 
 TOOL = Tool(
     name="list_running_projects",

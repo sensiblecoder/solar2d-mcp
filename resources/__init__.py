@@ -6,7 +6,6 @@ from mcp.types import Resource
 
 from resources import info
 
-
 # Collect all resources
 RESOURCES: list[Resource] = [
     info.RESOURCE,

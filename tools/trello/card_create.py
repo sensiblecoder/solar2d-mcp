@@ -2,10 +2,13 @@
 Trello card creation — create a card with lane, labels, description, and checklist.
 """
 
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
 from tools.trello.client import (
-    resolve_lane_id, resolve_label_ids, trello_request, LANE_NAMES,
+    LANE_NAMES,
+    resolve_label_ids,
+    resolve_lane_id,
+    trello_request,
 )
 
 TOOL = Tool(
@@ -54,7 +57,7 @@ TOOL = Tool(
 async def handle(arguments: dict) -> list[TextContent]:
     """Handle create_trello_card tool call."""
     try:
-        import httpx
+        import httpx  # noqa: F401
     except ImportError:
         return [TextContent(
             type="text",

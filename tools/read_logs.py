@@ -6,10 +6,9 @@ import os
 import tempfile
 from pathlib import Path
 
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
 from utils import find_main_lua
-
 
 TOOL = Tool(
     name="read_solar2d_logs",

@@ -6,10 +6,9 @@ import json
 import os
 import tempfile
 
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
 from config import _load_config
-
 
 TOOL = Tool(
     name="publish_social_post",
@@ -219,7 +218,7 @@ async def handle(arguments: dict) -> list[TextContent]:
         f"Content: {content[:80]}{'...' if len(content) > 80 else ''}",
     ]
     if media_path:
-        lines.append(f"Media: attached")
+        lines.append("Media: attached")
     if title:
         lines.append(f"Title: {title}")
 

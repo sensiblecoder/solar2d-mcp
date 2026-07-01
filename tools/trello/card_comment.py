@@ -2,7 +2,7 @@
 Trello card comment — add a comment to a card.
 """
 
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
 from tools.trello.client import trello_request
 
@@ -29,7 +29,7 @@ TOOL = Tool(
 async def handle(arguments: dict) -> list[TextContent]:
     """Handle comment_trello_card tool call."""
     try:
-        import httpx
+        import httpx  # noqa: F401
     except ImportError:
         return [TextContent(
             type="text",
@@ -45,7 +45,7 @@ async def handle(arguments: dict) -> list[TextContent]:
         return [TextContent(type="text", text="Error: text is required.")]
 
     try:
-        comment = await trello_request(
+        await trello_request(
             "POST", f"/cards/{card_id}/actions/comments",
             params={"text": text}
         )

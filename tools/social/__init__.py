@@ -8,7 +8,6 @@ httpx is required only for publishing.
 
 from tools.social import configure, preview, publish
 
-
 TOOLS = [
     configure.TOOL,
     preview.TOOL,

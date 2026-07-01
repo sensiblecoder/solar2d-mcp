@@ -4,7 +4,6 @@ solar2d://info resource - Server information.
 
 from mcp.types import Resource
 
-
 RESOURCE = Resource(
     uri="solar2d://info",
     name="Solar2D Server Info",

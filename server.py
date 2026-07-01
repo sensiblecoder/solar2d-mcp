@@ -7,12 +7,11 @@ A Model Context Protocol server for working with Solar2D (Corona SDK) projects.
 import asyncio
 
 from mcp.server import Server
-from mcp.types import Tool, Resource
 from mcp.server.stdio import stdio_server
+from mcp.types import Resource, Tool
 
-from tools import TOOLS, call_tool
 from resources import RESOURCES, read_resource
-
+from tools import TOOLS, call_tool
 
 # Initialize the MCP server
 app = Server("solar2d-server")

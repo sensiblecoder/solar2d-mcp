@@ -8,10 +8,9 @@ import os
 import tempfile
 from pathlib import Path
 
-from mcp.types import Tool, TextContent, ImageContent
+from mcp.types import ImageContent, TextContent, Tool
 
 from utils import find_main_lua
-
 
 # Tool definitions
 START_RECORDING_TOOL = Tool(

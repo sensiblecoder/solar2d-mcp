@@ -2,11 +2,15 @@
 Trello board setup — create/map workflow lanes and labels.
 """
 
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
 from tools.trello.client import (
-    get_trello_config, save_trello_config, get_board_id,
-    trello_request, LANE_NAMES, LABEL_DEFS,
+    LABEL_DEFS,
+    LANE_NAMES,
+    get_board_id,
+    get_trello_config,
+    save_trello_config,
+    trello_request,
 )
 
 TOOL = Tool(
@@ -41,7 +45,7 @@ TOOL = Tool(
 async def handle(arguments: dict) -> list[TextContent]:
     """Handle setup_trello_board tool call."""
     try:
-        import httpx
+        import httpx  # noqa: F401
     except ImportError:
         return [TextContent(
             type="text",

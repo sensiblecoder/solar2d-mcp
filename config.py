@@ -5,9 +5,8 @@ Auto-detects Solar2D location and persists user preferences.
 
 import json
 import os
-from pathlib import Path
 from glob import glob
-
+from pathlib import Path
 
 CONFIG_DIR = Path.home() / ".config" / "solar2d-mcp"
 CONFIG_FILE = CONFIG_DIR / "config.json"
