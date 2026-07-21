@@ -30,6 +30,7 @@ _HANDLERS = {
     "stop_screenshot_recording": screenshot.handle_stop_recording,
     "get_simulator_screenshot": screenshot.handle_get_screenshot,
     "list_screenshots": screenshot.handle_list_screenshots,
+    "encode_recording_video": screenshot.handle_encode_video,
     "simulate_tap": touch.handle_simulate_tap,
     "simulate_drag": touch.handle_simulate_drag,
     "find_object": touch.handle_find_object,

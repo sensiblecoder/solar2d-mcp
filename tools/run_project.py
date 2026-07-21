@@ -98,6 +98,10 @@ local controlFile = "{control_file}"
 local captureInterval = 100  -- 100ms between captures
 local screenshotCount = 0
 local recordingEndTime = 0
+-- Hard safety ceiling: recording can never run longer than this, even if a
+-- 'stop' is never sent or the control file is written directly. At 10fps this
+-- bounds the frames on disk (~5 min -> ~3000 frames).
+local MAX_RECORDING_SECONDS = 300
 
 -- Helper to check if file exists
 local function fileExists(path)
@@ -216,6 +220,10 @@ local function checkControl()
         -- Not a number, ignore
         return
     elseif duration > 0 then
+        if duration > MAX_RECORDING_SECONDS then
+            print("[MCP Screenshot] Requested " .. duration .. "s exceeds max; capping at " .. MAX_RECORDING_SECONDS .. "s")
+            duration = MAX_RECORDING_SECONDS
+        end
         recordingEndTime = system.getTimer() + (duration * 1000)
         print("[MCP Screenshot] Recording for " .. duration .. " seconds (screenshots continue from #" .. (screenshotCount + 1) .. ")")
     elseif duration == 0 then
