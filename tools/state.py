@@ -8,10 +8,9 @@ import os
 import tempfile
 from pathlib import Path
 
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
 from utils import find_main_lua
-
 
 # Tool definitions
 GET_GAME_STATE_TOOL = Tool(
@@ -315,10 +314,11 @@ async def handle_run_scenario(arguments: dict) -> list[TextContent]:
     # If scenario has a random_seed, we need to restart the simulator
     # so the seed is applied at startup (Phase 1 in _mcp_state.lua)
     if setup.get("random_seed") is not None:
-        from utils import running_projects
-        from tools import run_project
-        import subprocess
         import signal
+        import subprocess
+
+        from tools import run_project
+        from utils import running_projects
 
         main_lua_path = find_main_lua(project_path)
         project_dir = str(Path(main_lua_path).parent)

@@ -14,6 +14,16 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for wo
    pip install -e .
    ```
 
+   Optional extras for the experimental integrations:
+   ```bash
+   pip install -e ".[trello,social]"
+   ```
+
+   `encode_recording_video` also needs [ffmpeg](https://ffmpeg.org/) on the host (`brew install ffmpeg`).
+
+   The SolarScope test tools need the [SolarScope](https://github.com/sensiblecoder/solar-scope)
+   runtime added to your game (see [SolarScope Tests](#solarscope-tests)).
+
 2. **Test the server:**
    ```bash
    python server.py
@@ -109,6 +119,8 @@ Assistant: [calls configure_solar2d(confirm=true)]
 - `start_screenshot_recording` - Start capturing screenshots from the simulator
   - Captures at 10 fps (100ms interval)
   - Default recording duration: 60 seconds (max: 300 seconds / 5 minutes)
+  - The 300s ceiling is enforced in the Lua capture loop too, so a recording
+    stops on its own even if `stop_screenshot_recording` is never called
   - Can extend recording while already capturing
 - `stop_screenshot_recording` - Stop screenshot recording early
 - `get_simulator_screenshot` - Get screenshot(s) for visual analysis
@@ -117,6 +129,11 @@ Assistant: [calls configure_solar2d(confirm=true)]
   - `which="all"` - List all recorded screenshots
   - `which="5"` - Get specific recorded screenshot by number
 - `list_screenshots` - List all available screenshots with file sizes
+- `encode_recording_video` - Stitch a recording session's frames into an MP4
+  - Optional `fps`, `width`, `start_frame`/`end_frame`, and `filename`
+  - Written to a `video/` subfolder of the screenshot directory
+  - MP4 plays inline in the Claude app (a GIF does not) and is smaller
+  - Requires ffmpeg
 - `simulate_tap` - Tap/click on the simulator screen
   - Uses percentage-based bounding box (left, right, top, bottom)
   - Taps the center of the specified area
@@ -141,6 +158,34 @@ Assistant: [calls configure_solar2d(confirm=true)]
     pass/fail test (actions: `wait_for`, `verify`, `wait`, `tap`, `drag`,
     `play_card`, `tap_stat`, `tap_choice`)
 - `list_scenarios` - List saved scenario files from the project's `scenarios/` folder
+
+#### SolarScope Tests
+
+Drive [SolarScope](https://github.com/sensiblecoder/solar-scope), an in-game
+test framework for Solar2D ("Playwright for Solar2D"). Tests are plain Lua that
+run inside the simulator. They drive the real UI through hit-tested input and
+assert on structured game state.
+
+> **Optional dependency.** SolarScope is only needed for the three tools below.
+> The rest of the server works without it. These tools don't install SolarScope.
+> They write a command to `<project>/.solar_scope/command.json` and read the
+> result the framework writes to the simulator sandbox, so the game must already
+> include the SolarScope runtime. To add it, copy `solar_scope.lua` and the
+> `solar_scope/` folder from the SolarScope repo into your project. See its
+> [README](https://github.com/sensiblecoder/solar-scope#readme) for details.
+>
+> Results are read from `~/Library/Application Support/Corona Simulator/<project>-*/Documents/solar_scope/`,
+> so these tools currently work on macOS only.
+
+- `run_solar_scope_test` - Launch the project running a specific test module
+  (e.g. `tests.regression.match_clears`) without editing the game's config
+  - Replaces any running instance
+  - Returns a command sequence number for `get_solar_scope_result`
+- `rerun_solar_scope_test` - Hot-reload a test into an already-running simulator
+  - Much faster than relaunching when iterating on a test
+- `get_solar_scope_result` - Read the structured result of the latest run
+  (status, message, errors, artifacts, probe report)
+  - Pass `wait_seq` to poll until that run's result appears (`timeout_ms`, default 8000)
 
 ### Resources
 
@@ -181,9 +226,10 @@ solar2d-mcp/
 │   ├── run_project.py # run_solar2d_project tool
 │   ├── read_logs.py   # read_solar2d_logs tool
 │   ├── list_projects.py # list_running_projects tool
-│   ├── screenshot.py  # Screenshot recording tools
+│   ├── screenshot.py  # Screenshot recording + MP4 encode tools
 │   ├── touch.py       # Touch/drag simulation tools
 │   ├── state.py       # Game state & test scenario tools
+│   ├── solar_scope.py # SolarScope test-runner tools
 │   ├── social/        # Social media tools (experimental)
 │   └── trello/        # Trello board tools (experimental)
 ├── resources/
@@ -203,6 +249,8 @@ Once configured, you can test the server with prompts like:
 - "Show me the logs from my running Solar2D project"
 - "Read the last 100 lines of Solar2D logs"
 - "List all running Solar2D projects"
+- "Record 20 seconds of gameplay and give me an MP4"
+- "Run the SolarScope test tests.regression.match_clears and report the result"
 
 ## Capturing Lua print() Output
 
@@ -223,7 +271,7 @@ The logger is inserted intelligently:
 
 Once the logger is injected, it works **forever** - even when you launch Solar2D manually from your IDE or command line!
 
-- Log file location: `/tmp/corona_log_<project-name>.txt` (predictable, based on project directory name)
+- Log file location: `<tempdir>/corona_log_<project-name>.txt`, where `<tempdir>` is Python's `tempfile.gettempdir()` (`$TMPDIR`, usually under `/var/folders/...` on macOS)
 - All Lua `print()` output is captured automatically by `_mcp_logger.lua`
 - Your prints still display normally in the console (Solar2D's output)
 - **Log file is cleared on each launch** - `_mcp_logger.lua` truncates the file when Solar2D starts
@@ -243,7 +291,7 @@ The MCP server can capture screenshots from the running simulator for visual ana
 
 ### Screenshot Location
 
-Screenshots are saved to: `/tmp/solar2d_screenshots_<project-name>/`
+Screenshots are saved to: `<tempdir>/solar2d_screenshots_<project-name>/` (same temp directory as the log file)
 
 The directory is cleared when the simulator starts, but screenshots persist across recording sessions within the same run.
 
@@ -304,3 +352,4 @@ Assistant: [calls get_simulator_screenshot]
 - [MCP Documentation](https://modelcontextprotocol.io/)
 - [Solar2D Documentation](https://docs.coronalabs.com/)
 - [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk)
+- [SolarScope](https://github.com/sensiblecoder/solar-scope) - In-game Lua test framework driven by the SolarScope tools

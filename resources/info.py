@@ -19,10 +19,10 @@ def read() -> str:
 This is a Model Context Protocol server for working with Solar2D (Corona SDK) projects.
 
 Capabilities:
-- Project analysis
-- Code context extraction
-- Build configuration help
-- API reference
-
-Status: Hello World Implementation
+- Launch projects in the Solar2D Simulator and read Lua print() logs
+- Capture screenshots / recordings and encode them to MP4
+- Simulate taps and drags, and locate touchable objects
+- Read structured game state and run test scenarios
+- Run SolarScope tests and read their results
+- Experimental: Trello board and social media integrations
 """

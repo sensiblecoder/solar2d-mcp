@@ -4,7 +4,18 @@ Solar2D MCP Tools - Tool definitions and dispatcher.
 
 from mcp.types import ImageContent, TextContent, Tool
 
-from tools import configure, list_projects, read_logs, run_project, screenshot, social, solar_scope, state, touch, trello
+from tools import (
+    configure,
+    list_projects,
+    read_logs,
+    run_project,
+    screenshot,
+    social,
+    solar_scope,
+    state,
+    touch,
+    trello,
+)
 
 # Collect all tools
 TOOLS: list[Tool] = [

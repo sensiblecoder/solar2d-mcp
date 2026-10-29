@@ -15,3 +15,7 @@ build/
 
 # Local settings
 settings.local.json
+
+# Tooling caches
+.ruff_cache/
+.pytest_cache/

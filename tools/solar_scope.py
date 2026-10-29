@@ -78,7 +78,8 @@ RUN_TOOL = Tool(
         "Launch a Solar2D project in the simulator running a specific SolarScope test "
         "module (e.g. 'tests.regression.record_replay'), without editing the game's "
         "config. Replaces any running instance. Returns the command sequence to pass to "
-        "get_solar_scope_result."
+        "get_solar_scope_result. Requires the project to include the SolarScope runtime "
+        "(https://github.com/sensiblecoder/solar-scope)."
     ),
     inputSchema={
         "type": "object",
