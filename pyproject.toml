@@ -3,6 +3,7 @@ name = "solar2d-mcp-server"
 version = "0.1.0"
 description = "MCP server for running, inspecting, and testing Solar2D (Corona SDK) projects"
 requires-python = ">=3.10"
+license = { file = "LICENSE" }
 dependencies = [
     "mcp>=1.0.0",
 ]

@@ -353,3 +353,7 @@ Assistant: [calls get_simulator_screenshot]
 - [Solar2D Documentation](https://docs.coronalabs.com/)
 - [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk)
 - [SolarScope](https://github.com/sensiblecoder/solar-scope) - In-game Lua test framework driven by the SolarScope tools
+
+## License
+
+[MIT](LICENSE) © 2025-2026 Underbyte Studios
