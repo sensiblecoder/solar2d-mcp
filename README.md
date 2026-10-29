@@ -356,4 +356,4 @@ Assistant: [calls get_simulator_screenshot]
 
 ## License
 
-[MIT](LICENSE) © 2025-2026 Underbyte Studios
+[MIT](LICENSE) © 2025-2026 Under Byte Studios, LLC
