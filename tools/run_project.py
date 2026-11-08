@@ -91,29 +91,13 @@ def create_screenshot_module(project_dir: str, project_name: str) -> str:
     control_file = os.path.join(tempfile.gettempdir(), f"solar2d_screenshots_{project_name}.control")
 
     lua_screenshot = f'''
--- MCP Screenshot: Captures screenshots periodically when recording is enabled
+-- MCP Screenshot: one still on demand ("now" in the control file).
+-- Video recording is done outside the game (tools/video.py, ScreenCaptureKit),
+-- so nothing here runs per frame.
 local lfs = require("lfs")
 local screenshotDir = "{screenshot_dir}"
 local controlFile = "{control_file}"
-local captureInterval = 100  -- 100ms between captures
-local screenshotCount = 0
-local recordingEndTime = 0
--- Hard safety ceiling: recording can never run longer than this, even if a
--- 'stop' is never sent or the control file is written directly. At 10fps this
--- bounds the frames on disk (~5 min -> ~3000 frames).
-local MAX_RECORDING_SECONDS = 300
 
--- Helper to check if file exists
-local function fileExists(path)
-    local file = io.open(path, "r")
-    if file then
-        file:close()
-        return true
-    end
-    return false
-end
-
--- Helper to read and consume control file
 local function readControlFile()
     local file = io.open(controlFile, "r")
     if file then
@@ -123,23 +107,6 @@ local function readControlFile()
         return content
     end
     return nil
-end
-
--- Clear screenshot directory on start
-local function clearScreenshotDir()
-    -- Create directory if it doesn't exist
-    lfs.mkdir(screenshotDir)
-    -- Remove existing screenshots
-    for file in lfs.dir(screenshotDir) do
-        if file ~= "." and file ~= ".." then
-            os.remove(screenshotDir .. "/" .. file)
-        end
-    end
-end
-
--- Check if currently recording
-local function isRecording()
-    return system.getTimer() < recordingEndTime
 end
 
 -- Helper to copy file (works across volumes)
@@ -156,90 +123,30 @@ local function copyFile(src, dst)
     return true
 end
 
--- Capture screenshot
-local function captureScreen()
-    if not isRecording() then return end
-
-    screenshotCount = screenshotCount + 1
-    local filename = string.format("screenshot_%03d.jpg", screenshotCount)
-    local fullPath = screenshotDir .. "/" .. filename
-
-    -- Capture the display to Solar2D's temp directory
-    display.save(display.currentStage, {{
-        filename = filename,
-        baseDir = system.TemporaryDirectory,
-        captureOffscreenArea = false,
-        isFullResolution = false
-    }})
-
-    -- Copy from Solar2D temp to our /tmp/ screenshot directory
-    local tempPath = system.pathForFile(filename, system.TemporaryDirectory)
-    if tempPath then
-        if copyFile(tempPath, fullPath) then
-            os.remove(tempPath)  -- Clean up temp file
-        end
-    end
-end
-
--- Capture a single on-demand screenshot (not part of recording sequence)
 local function captureOnDemand()
     local filename = "screenshot_latest.jpg"
-    local fullPath = screenshotDir .. "/" .. filename
-
-    -- Capture the display to Solar2D's temp directory
     display.save(display.currentStage, {{
         filename = filename,
         baseDir = system.TemporaryDirectory,
         captureOffscreenArea = false,
         isFullResolution = false
     }})
-
-    -- Copy from Solar2D temp to our /tmp/ screenshot directory
     local tempPath = system.pathForFile(filename, system.TemporaryDirectory)
-    if tempPath then
-        if copyFile(tempPath, fullPath) then
-            os.remove(tempPath)  -- Clean up temp file
-            print("[MCP Screenshot] On-demand capture saved")
-        end
+    if tempPath and copyFile(tempPath, screenshotDir .. "/" .. filename) then
+        os.remove(tempPath)
+        print("[MCP Screenshot] On-demand capture saved")
     end
 end
 
--- Check control file for recording commands
 local function checkControl()
-    local content = readControlFile()
-    if not content then return end
-
-    -- Check for "now" command (on-demand capture)
-    if content == "now" then
-        captureOnDemand()
-        return
-    end
-
-    local duration = tonumber(content)
-    if duration == nil then
-        -- Not a number, ignore
-        return
-    elseif duration > 0 then
-        if duration > MAX_RECORDING_SECONDS then
-            print("[MCP Screenshot] Requested " .. duration .. "s exceeds max; capping at " .. MAX_RECORDING_SECONDS .. "s")
-            duration = MAX_RECORDING_SECONDS
-        end
-        recordingEndTime = system.getTimer() + (duration * 1000)
-        print("[MCP Screenshot] Recording for " .. duration .. " seconds (screenshots continue from #" .. (screenshotCount + 1) .. ")")
-    elseif duration == 0 then
-        -- Explicit stop command
-        recordingEndTime = 0
-        print("[MCP Screenshot] Recording stopped at screenshot #" .. screenshotCount)
-    end
+    if readControlFile() == "now" then captureOnDemand() end
 end
 
--- Initialize
-clearScreenshotDir()
-print("[MCP Screenshot] Module initialized - screenshots will be saved to: " .. screenshotDir)
+lfs.mkdir(screenshotDir)
+os.remove(screenshotDir .. "/screenshot_latest.jpg")
+print("[MCP Screenshot] Module initialized - stills go to: " .. screenshotDir)
 
--- Start timers
-timer.performWithDelay(captureInterval, captureScreen, 0)
-timer.performWithDelay(500, checkControl, 0)
+timer.performWithDelay(200, checkControl, 0)
 '''
 
     screenshot_path = os.path.join(project_dir, "_mcp_screenshot.lua")
@@ -972,7 +879,7 @@ async def handle(arguments: dict) -> list[TextContent]:
 
         return [TextContent(
             type="text",
-            text=f"Solar2D Simulator launched successfully!\n\nProject: {main_lua_path}\nPID: {process.pid}\nLog file: {log_file}\nScreenshot dir: {screenshot_dir}\nDebug: {debug}\nNo Console: {no_console}\n\n{chr(10).join(status_lines)}\n\nAll print() output will be captured automatically.\nUse read_solar2d_logs to view the console output.\nUse start_screenshot_recording to capture screenshots."
+            text=f"Solar2D Simulator launched successfully!\n\nProject: {main_lua_path}\nPID: {process.pid}\nLog file: {log_file}\nScreenshot dir: {screenshot_dir}\nDebug: {debug}\nNo Console: {no_console}\n\n{chr(10).join(status_lines)}\n\nAll print() output will be captured automatically.\nUse read_solar2d_logs to view the console output.\nUse get_simulator_screenshot for a still, start_video_recording for video."
         )]
 
     except Exception as e:

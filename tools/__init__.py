@@ -15,6 +15,7 @@ from tools import (
     state,
     touch,
     trello,
+    video,
 )
 
 # Collect all tools
@@ -23,7 +24,8 @@ TOOLS: list[Tool] = [
     run_project.TOOL,
     read_logs.TOOL,
     list_projects.TOOL,
-    *screenshot.TOOLS,  # Include all screenshot tools
+    *screenshot.TOOLS,  # Live / from-video stills
+    *video.TOOLS,  # 60fps window video + social exports
     *touch.TOOLS,  # Include touch simulation tools
     *state.TOOLS,  # Include game state and scenario tools
     *solar_scope.TOOLS,  # Include SolarScope test-runner tools
@@ -37,11 +39,7 @@ _HANDLERS = {
     "run_solar2d_project": run_project.handle,
     "read_solar2d_logs": read_logs.handle,
     "list_running_projects": list_projects.handle,
-    "start_screenshot_recording": screenshot.handle_start_recording,
-    "stop_screenshot_recording": screenshot.handle_stop_recording,
     "get_simulator_screenshot": screenshot.handle_get_screenshot,
-    "list_screenshots": screenshot.handle_list_screenshots,
-    "encode_recording_video": screenshot.handle_encode_video,
     "simulate_tap": touch.handle_simulate_tap,
     "simulate_drag": touch.handle_simulate_drag,
     "find_object": touch.handle_find_object,
@@ -49,6 +47,7 @@ _HANDLERS = {
     "run_solar_scope_test": solar_scope.handle_run,
     "rerun_solar_scope_test": solar_scope.handle_rerun,
     "get_solar_scope_result": solar_scope.handle_get_result,
+    **video.HANDLERS,  # Video recording handlers
     **state.HANDLERS,  # Game state and scenario handlers
     **social.HANDLERS,  # Social media handlers
     **trello.HANDLERS,  # Trello handlers

@@ -11,18 +11,6 @@ from mcp.types import TextContent, Tool
 
 from utils import find_main_lua
 
-# Duration in seconds for auto-recording on each interaction
-AUTO_RECORD_SECONDS = 3
-
-
-def _start_auto_recording(project_name: str):
-    """Start a short screenshot recording to capture interaction visuals."""
-    control_file = os.path.join(
-        tempfile.gettempdir(), f"solar2d_screenshots_{project_name}.control"
-    )
-    with open(control_file, 'w') as f:
-        f.write(str(AUTO_RECORD_SECONDS))
-
 # Tool definitions
 SIMULATE_TAP_TOOL = Tool(
     name="simulate_tap",
@@ -223,8 +211,6 @@ async def handle_simulate_tap(arguments: dict) -> list[TextContent]:
     except Exception as e:
         return [TextContent(type="text", text=f"Error reading display info: {str(e)}")]
 
-    # Start auto-recording before the tap
-    _start_auto_recording(project_name)
 
     # Write tap command to control file
     command = f"tap,{x},{y}"
@@ -279,8 +265,6 @@ async def handle_find_object(arguments: dict) -> list[TextContent]:
     except Exception as e:
         return [TextContent(type="text", text=f"Error reading display info: {str(e)}")]
 
-    # Start auto-recording before the find
-    _start_auto_recording(project_name)
 
     # Write find command to control file
     command = f"find,{x1},{y1},{x2},{y2},{label}"
@@ -349,8 +333,6 @@ async def handle_simulate_drag(arguments: dict) -> list[TextContent]:
     except Exception as e:
         return [TextContent(type="text", text=f"Error reading display info: {str(e)}")]
 
-    # Start auto-recording before the drag
-    _start_auto_recording(project_name)
 
     # Write drag command to control file
     command = f"drag,{x1},{y1},{x2},{y2},{int(duration)}"

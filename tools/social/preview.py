@@ -16,7 +16,7 @@ from utils import find_main_lua
 
 TOOL = Tool(
     name="preview_social_post",
-    description="Generate an HTML preview of a social media post showing how it will appear on each platform (Twitter/Facebook card mockups). Opens in browser. Must preview before publishing. Supports attaching a simulator screenshot.\n\nIMPORTANT: Before calling this tool, help the user craft compelling post content. Run `git log --oneline --since='1 week ago'` to review recent development activity. Summarize the key changes into 2-3 draft post options with different tones (casual/excited, professional, community-focused). Suggest relevant hashtags based on the project and changes. Let the user pick or refine a draft before previewing. Also check for available screenshots to attach using get_simulator_screenshot or list_screenshots.",
+    description="Generate an HTML preview of a social media post showing how it will appear on each platform (Twitter/Facebook card mockups). Opens in browser. Must preview before publishing. Supports attaching a simulator screenshot.\n\nIMPORTANT: Before calling this tool, help the user craft compelling post content. Run `git log --oneline --since='1 week ago'` to review recent development activity. Summarize the key changes into 2-3 draft post options with different tones (casual/excited, professional, community-focused). Suggest relevant hashtags based on the project and changes. Let the user pick or refine a draft before previewing. Capture a screenshot to attach with get_simulator_screenshot.",
     inputSchema={
         "type": "object",
         "properties": {
@@ -31,7 +31,7 @@ TOOL = Tool(
             },
             "media": {
                 "type": "string",
-                "description": "Screenshot to attach: 'latest', 'last', a number, or a file path. Uses same conventions as get_simulator_screenshot."
+                "description": "Screenshot to attach: 'latest' (the last get_simulator_screenshot capture) or a file path (e.g. a still saved with get_simulator_screenshot video_time + save_to)."
             },
             "project_path": {
                 "type": "string",
@@ -108,21 +108,7 @@ def _resolve_media_path(media: str, project_path: str | None) -> str | None:
     if media == "latest":
         path = os.path.join(screenshot_dir, "screenshot_latest.jpg")
         return path if os.path.isfile(path) else None
-    elif media == "last":
-        screenshots = sorted([
-            f for f in os.listdir(screenshot_dir)
-            if f.startswith("screenshot_") and f.endswith(".jpg") and f != "screenshot_latest.jpg"
-        ])
-        if screenshots:
-            return os.path.join(screenshot_dir, screenshots[-1])
-        return None
-    else:
-        try:
-            num = int(media)
-            path = os.path.join(screenshot_dir, f"screenshot_{num:03d}.jpg")
-            return path if os.path.isfile(path) else None
-        except ValueError:
-            return None
+    return None
 
 
 def _optimize_image_for_platform(image_path: str, platform: str) -> str:

@@ -19,3 +19,6 @@ settings.local.json
 # Tooling caches
 .ruff_cache/
 .pytest_cache/
+
+# simcap binary (compiled on first use from capture/simcap.swift)
+capture/.build/

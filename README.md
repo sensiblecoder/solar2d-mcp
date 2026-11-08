@@ -19,7 +19,10 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for wo
    pip install -e ".[trello,social]"
    ```
 
-   `encode_recording_video` also needs [ffmpeg](https://ffmpeg.org/) on the host (`brew install ffmpeg`).
+   Video recording (macOS) needs the Xcode command line tools (`swiftc` builds the recorder on first use),
+   [ffmpeg](https://ffmpeg.org/) for exports (`brew install ffmpeg`), and Screen Recording permission for
+   the terminal/app that launches the MCP server (System Settings > Privacy & Security > Screen & System
+   Audio Recording).
 
    The SolarScope test tools need the [SolarScope](https://github.com/sensiblecoder/solar-scope)
    runtime added to your game (see [SolarScope Tests](#solarscope-tests)).
@@ -116,24 +119,18 @@ Assistant: [calls configure_solar2d(confirm=true)]
 - `list_running_projects` - List all tracked Solar2D Simulator instances
   - Shows PID, status, and log file location
   - Useful for managing multiple running projects
-- `start_screenshot_recording` - Start capturing screenshots from the simulator
-  - Captures at 10 fps (100ms interval)
-  - Default recording duration: 60 seconds (max: 300 seconds / 5 minutes)
-  - The 300s ceiling is enforced in the Lua capture loop too, so a recording
-    stops on its own even if `stop_screenshot_recording` is never called
-  - Can extend recording while already capturing
-- `stop_screenshot_recording` - Stop screenshot recording early
-- `get_simulator_screenshot` - Get screenshot(s) for visual analysis
-  - `which="latest"` - Capture fresh screenshot now (default)
-  - `which="last"` - Get most recent from recording session
-  - `which="all"` - List all recorded screenshots
-  - `which="5"` - Get specific recorded screenshot by number
-- `list_screenshots` - List all available screenshots with file sizes
-- `encode_recording_video` - Stitch a recording session's frames into an MP4
-  - Optional `fps`, `width`, `start_frame`/`end_frame`, and `filename`
-  - Written to a `video/` subfolder of the screenshot directory
-  - MP4 plays inline in the Claude app (a GIF does not) and is smaller
-  - Requires ffmpeg
+- `get_simulator_screenshot` - Get a still for visual analysis
+  - Default: capture the live simulator now
+  - `video_time` - pull a full-resolution still out of a video recording instead
+    (`recording` picks one, default the newest; `save_to` writes the full-res PNG)
+- `start_video_recording` - Record the simulator window as video (see [Recording Video](#recording-video))
+  - Native Retina resolution, 60fps, the simulator's own audio, title bar cropped off
+  - `duration` (default 60s, max 600s), `name`, `fps`, `codec` (`hevc` / `prores`), `audio`, `crop`
+- `stop_video_recording` - Stop it, wait for the file, report frames and delivered fps
+- `export_video` - Cut a recording for delivery: presets `x` (1920x1080 60fps), `youtube`
+  (2560x1440 60fps), `vertical` (1080x1920, aim with `focus_x`), `preview` (960px 30fps),
+  `master` (ProRes 422 HQ); trim with `start`/`end`
+- `list_video_recordings` - Recordings and exports with duration, size and resolution
 - `simulate_tap` - Tap/click on the simulator screen
   - Uses percentage-based bounding box (left, right, top, bottom)
   - Taps the center of the specified area
@@ -226,12 +223,15 @@ solar2d-mcp/
 │   ├── run_project.py # run_solar2d_project tool
 │   ├── read_logs.py   # read_solar2d_logs tool
 │   ├── list_projects.py # list_running_projects tool
-│   ├── screenshot.py  # Screenshot recording + MP4 encode tools
+│   ├── screenshot.py  # get_simulator_screenshot (live or from a recording)
+│   ├── video.py       # 60fps window recording + export presets
 │   ├── touch.py       # Touch/drag simulation tools
 │   ├── state.py       # Game state & test scenario tools
 │   ├── solar_scope.py # SolarScope test-runner tools
 │   ├── social/        # Social media tools (experimental)
 │   └── trello/        # Trello board tools (experimental)
+├── capture/
+│   └── simcap.swift   # ScreenCaptureKit window recorder (built to capture/.build/)
 ├── resources/
 │   ├── __init__.py    # Resource dispatcher
 │   └── info.py        # solar2d://info resource
@@ -249,7 +249,7 @@ Once configured, you can test the server with prompts like:
 - "Show me the logs from my running Solar2D project"
 - "Read the last 100 lines of Solar2D logs"
 - "List all running Solar2D projects"
-- "Record 20 seconds of gameplay and give me an MP4"
+- "Record 20 seconds of gameplay and export it for X"
 - "Run the SolarScope test tests.regression.match_clears and report the result"
 
 ## Capturing Lua print() Output
@@ -280,38 +280,40 @@ Once the logger is injected, it works **forever** - even when you launch Solar2D
 
 ## Capturing Screenshots
 
-The MCP server can capture screenshots from the running simulator for visual analysis!
+`get_simulator_screenshot` writes `"now"` to a control file; the auto-injected
+`_mcp_screenshot.lua` saves one JPEG at content resolution to
+`<tempdir>/solar2d_screenshots_<project-name>/screenshot_latest.jpg` and the tool
+returns it. Nothing in the game runs per frame for it.
 
-### How It Works
+## Recording Video
 
-1. **Auto-injected module**: When you run a project, `_mcp_screenshot.lua` is created and injected into `main.lua`
-2. **Control file signaling**: The MCP server writes to a control file to start/stop recording
-3. **Periodic capture**: Screenshots are captured every 100ms (10 fps) while recording is active
-4. **JPEG compression**: Images are saved as JPEG at content resolution for smaller file sizes
+Video is recorded outside the game, from the simulator's window, by `capture/simcap`
+(ScreenCaptureKit; compiled from `capture/simcap.swift` the first time it is needed).
+The game does no work for it, so a recording runs at the simulator's own frame rate
+(60fps) instead of the stuttering 10fps a `display.save` loop could manage.
 
-### Screenshot Location
-
-Screenshots are saved to: `<tempdir>/solar2d_screenshots_<project-name>/` (same temp directory as the log file)
-
-The directory is cleared when the simulator starts, but screenshots persist across recording sessions within the same run.
-
-### Recording Workflow
+- **Picture:** the simulator window at native Retina pixels (a 1728x972pt window is
+  3456x1944), cropped to the game's content aspect so the title bar is gone. The aspect
+  comes from the display info the touch module writes; `crop: false` keeps the whole window.
+  The window can sit behind other windows, but not be minimized.
+- **Sound:** the simulator's own audio only, not the rest of the machine.
+- **Frames:** ScreenCaptureKit only sends a frame when the window changed, so a still
+  screen lowers the delivered count. Exports are constant frame rate.
+- **Masters** are kept in `~/Movies/solar2d-mcp/<project>/<name>.mov` (HEVC ~60Mbps, or
+  ProRes 422 HQ with `codec: prores`); exports go to its `exports/` folder.
+- **Control:** the recorder runs detached and stops on `stop_video_recording`, after
+  `duration`, or on SIGINT. Its state lives in `<tempdir>/solar2d_video_<project>.json`,
+  so any MCP server process can stop a recording another one started.
+- **Markers:** `simulate_tap` / `find_object` draw indicators into the game frame. Drive
+  takes meant for posting with a SolarScope harness instead.
 
 ```
-User: Start recording screenshots for 30 seconds
-Assistant: [calls start_screenshot_recording with duration=30]
-
-User: Show me what the game looks like now
-Assistant: [calls get_simulator_screenshot with which="latest"]
-         [displays the screenshot for visual analysis]
-
-User: Stop recording early
-Assistant: [calls stop_screenshot_recording]
+User: Record the boss intro and give me something for X
+Assistant: [start_video_recording name="boss-intro" duration=40]
+           [run_solar_scope_test test="tests.regression.boss_intro"]
+           [stop_video_recording]
+           [export_video preset="x" start=2 end=32]
 ```
-
-### Extending Recordings
-
-You can call `start_screenshot_recording` while already recording to extend the duration. Screenshots continue from where they left off (not reset).
 
 ## Touch Interaction
 
