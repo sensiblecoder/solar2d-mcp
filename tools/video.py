@@ -369,7 +369,9 @@ def _resolve_recording(project_name: str, ref: str | None) -> Path | None:
     if ref:
         p = d / (ref if ref.endswith(".mov") else f"{ref}.mov")
         return p if p.exists() else None
-    movs = sorted(d.glob("*.mov"), key=lambda p: p.stat().st_mtime, reverse=True)
+    # Masters only: a ProRes 'master' export is <name>-master.mov in the same folder.
+    movs = sorted((p for p in d.glob("*.mov") if not p.stem.endswith("-master")),
+                  key=lambda p: p.stat().st_mtime, reverse=True)
     return movs[0] if movs else None
 
 
@@ -425,9 +427,7 @@ async def handle_export(arguments: dict) -> list[TextContent]:
     filename = arguments.get("filename") or f"{src.stem}-{preset_name}{ext}"
     if not filename.endswith(ext):
         filename = Path(filename).stem + ext
-    out_dir = _video_dir(project_name) / "exports"
-    out_dir.mkdir(exist_ok=True)
-    out = out_dir / filename
+    out = _video_dir(project_name) / filename
 
     cmd = [ffmpeg, "-y", "-loglevel", "error"]
     if start:
@@ -480,7 +480,7 @@ async def handle_list(arguments: dict) -> list[TextContent]:
         return _text("Error: project_path is required")
     project_name, _ = _project(project_path)
     d = _video_dir(project_name)
-    files = sorted([*d.glob("*.mov"), *(d / "exports").glob("*.*")], key=lambda p: p.stat().st_mtime, reverse=True)
+    files = sorted([p for p in d.iterdir() if p.suffix in (".mov", ".mp4")], key=lambda p: p.stat().st_mtime, reverse=True)
     if not files:
         return _text(f"No recordings in {d}.")
     lines = [f"Recordings in {d} (newest first):", ""]
@@ -488,8 +488,7 @@ async def handle_list(arguments: dict) -> list[TextContent]:
         info = await _probe(p)
         v = next((s for s in info.get("streams", []) if s.get("codec_type") == "video"), {})
         dur = float(info.get("format", {}).get("duration", 0) or 0)
-        rel = p.relative_to(d)
-        lines.append(f"  {rel}  {dur:.1f}s  {v.get('width', '?')}x{v.get('height', '?')}  "
+        lines.append(f"  {p.name}  {dur:.1f}s  {v.get('width', '?')}x{v.get('height', '?')}  "
                      f"{p.stat().st_size / 1e6:.1f} MB")
     state = _read_state(project_name)
     if state and _alive(state["pid"]):

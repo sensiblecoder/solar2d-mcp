@@ -300,7 +300,7 @@ The game does no work for it, so a recording runs at the simulator's own frame r
 - **Frames:** ScreenCaptureKit only sends a frame when the window changed, so a still
   screen lowers the delivered count. Exports are constant frame rate.
 - **Masters** are kept in `~/Movies/solar2d-mcp/<project>/<name>.mov` (HEVC ~60Mbps, or
-  ProRes 422 HQ with `codec: prores`); exports go to its `exports/` folder.
+  ProRes 422 HQ with `codec: prores`); exports sit beside them as `<name>-<preset>.mp4`.
 - **Control:** the recorder runs detached and stops on `stop_video_recording`, after
   `duration`, or on SIGINT. Its state lives in `<tempdir>/solar2d_video_<project>.json`,
   so any MCP server process can stop a recording another one started.
