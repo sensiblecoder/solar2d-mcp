@@ -13,6 +13,42 @@ from mcp.types import TextContent, Tool
 import config
 from utils import find_main_lua, running_projects
 
+# Version of the generated _mcp_*.lua modules. BUMP THIS whenever any
+# template below changes. Each module is stamped with it on its first
+# line, and a module already carrying the same or a newer stamp is left
+# alone: a long-lived server process holds the templates it imported at
+# startup, and without the check it rewrote every project's modules with
+# whatever it had in memory on each launch -- an MCP started before a
+# template change quietly reverted the new module in the project.
+GENERATOR_VERSION = 2
+_STAMP_PREFIX = "-- MCP generated module v"
+
+
+def _stamp_version(path: str) -> int:
+    """The generator version stamped on an existing module, 0 if none."""
+    try:
+        with open(path, 'r') as f:
+            first = f.readline()
+    except OSError:
+        return 0
+    if not first.startswith(_STAMP_PREFIX):
+        return 0
+    rest = first[len(_STAMP_PREFIX):].split()
+    return int(rest[0]) if rest and rest[0].isdigit() else 0
+
+
+def write_generated(path: str, body: str) -> bool:
+    """Write a generated module unless the project already has this
+    generator version or a newer one. Returns True if it wrote."""
+    if os.path.exists(path) and _stamp_version(path) >= GENERATOR_VERSION:
+        return False
+    stamp = (f"{_STAMP_PREFIX}{GENERATOR_VERSION} (Solar2DMCP tools/run_project.py)."
+             " An MCP with an older generator leaves this file alone.\n")
+    with open(path, 'w') as f:
+        f.write(stamp + body)
+    return True
+
+
 TOOL = Tool(
     name="run_solar2d_project",
     description="Run a Solar2D project in the simulator. Provide either a path to main.lua or a project directory.",
@@ -79,8 +115,7 @@ print("[MCP] Logging initialized - output will be captured for Claude")
 '''
 
     logger_path = os.path.join(project_dir, "_mcp_logger.lua")
-    with open(logger_path, 'w') as f:
-        f.write(lua_logger)
+    write_generated(logger_path, lua_logger)
 
     return logger_path
 
@@ -150,8 +185,7 @@ timer.performWithDelay(200, checkControl, 0)
 '''
 
     screenshot_path = os.path.join(project_dir, "_mcp_screenshot.lua")
-    with open(screenshot_path, 'w') as f:
-        f.write(lua_screenshot)
+    write_generated(screenshot_path, lua_screenshot)
 
     return screenshot_path
 
@@ -468,8 +502,7 @@ timer.performWithDelay(checkInterval, checkControl, 0)
 '''
 
     touch_path = os.path.join(project_dir, "_mcp_touch.lua")
-    with open(touch_path, 'w') as f:
-        f.write(lua_touch)
+    write_generated(touch_path, lua_touch)
 
     return touch_path
 
@@ -627,8 +660,7 @@ print("[MCP Touch Overlay] Initialized - persistent visual indicators enabled")
 '''
 
     overlay_path = os.path.join(project_dir, "_mcp_touch_overlay.lua")
-    with open(overlay_path, 'w') as f:
-        f.write(lua_overlay)
+    write_generated(overlay_path, lua_overlay)
 
     return overlay_path
 
