@@ -21,18 +21,21 @@ _COMMON_PROPERTIES = {
     "model": {
         "type": "string",
         "description": (
-            "Image model. Default: gpt-image-2, or gpt-image-1.5 when background=transparent "
-            "(gpt-image-2 does not support transparency). See configure_art_generation for the list."
+            "Image model (default gpt-image-2.5-sunburst; gpt-image-2.5-flare is the faster sibling). "
+            "See configure_art_generation for the models this key can use."
         )
     },
     "size": {
         "type": "string",
-        "description": "e.g. 1024x1024, 1536x1024 (landscape), 1024x1536 (portrait), or auto (default)."
+        "description": (
+            "auto (default), 1024x1024, 1536x1024, 1024x1536. gpt-image-2.x models also take any WIDTHxHEIGHT "
+            "with both sides divisible by 16, aspect between 1:3 and 3:1, up to 3840x2160 (above 2560x1440 is experimental)."
+        )
     },
     "quality": {
         "type": "string",
-        "enum": ["low", "medium", "high", "auto"],
-        "description": "low is fast and cheap for drafts; high for final art (default: auto)."
+        "enum": ["low", "medium", "high", "xhigh", "max", "auto"],
+        "description": "low is fast and cheap for drafts; high for final art (default: auto). xhigh/max: gpt-image-2.5 models only."
     },
     "background": {
         "type": "string",
@@ -104,7 +107,10 @@ EDIT_TOOL = Tool(
             "input_fidelity": {
                 "type": "string",
                 "enum": ["high", "low"],
-                "description": "high keeps faces, logos and details of the references closer (costs more)."
+                "description": (
+                    "high keeps faces, logos and details of the references closer (costs more). "
+                    "Only gpt-image-1.5 takes high and low, gpt-image-1-mini only low; omit for other models."
+                )
             },
             **_COMMON_PROPERTIES,
         },

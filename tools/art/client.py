@@ -14,10 +14,10 @@ from pathlib import Path
 from config import _load_config, _save_config
 
 API_BASE = "https://api.openai.com/v1"
-DEFAULT_MODEL = "gpt-image-2"
-# gpt-image-2 rejects background=transparent ("Transparent background is not supported for
-# this model"); the gpt-image-1 family supports it, so transparent requests default to this.
-DEFAULT_TRANSPARENT_MODEL = "gpt-image-1.5"
+# gpt-image-2 is deprecated; the API reference names gpt-image-2.5-sunburst/-flare as the
+# replacements, and they officially support background=transparent (gpt-image-2 only in preview).
+DEFAULT_MODEL = "gpt-image-2.5-sunburst"
+DEFAULT_TRANSPARENT_MODEL = DEFAULT_MODEL
 
 # Generated art is kept (it is source material), so it lives under ~/Pictures, not the temp dir.
 ART_ROOT = Path.home() / "Pictures" / "solar2d-mcp"

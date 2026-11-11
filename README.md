@@ -205,9 +205,11 @@ These integrations are in progress and their tool surface may change:
     never the project; `OPENAI_API_KEY` in the server's environment works too. Optional
     `organization_id` / `project_id` send requests under a specific org or project.
   - `generate_art` - Prompt to image. `size`, `quality` (`low` for drafts), `background:
-    transparent` for sprites, `n` variations, `model` (default `gpt-image-2`; `gpt-image-1.5` for transparent backgrounds, which `gpt-image-2` rejects).
+    transparent` for sprites, `n` variations, `model` (default `gpt-image-2.5-sunburst`; `gpt-image-2` is deprecated).
   - `edit_art` - Rework existing images or draw new art that matches them: pass reference
     images (sprites, a simulator screenshot) and optionally a `mask` to redraw one region.
+  - GPT Image models need OpenAI organization verification; an org without image access gets
+    429 "TPM: Limit 0" on every image model.
   - Files are saved full-size to `save_to` (e.g. `<project>/images/hero.png`) or
     `~/Pictures/solar2d-mcp/<project>/art/`; the tool returns a downscaled preview.
 
