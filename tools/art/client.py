@@ -62,7 +62,14 @@ def _auth_headers() -> dict:
             "OpenAI not configured. Call configure_art_generation with api_key, "
             "or set OPENAI_API_KEY in the MCP server's environment."
         )
-    return {"Authorization": f"Bearer {key}"}
+    headers = {"Authorization": f"Bearer {key}"}
+    # Optional: bill/limit against a specific org or project (needed for user keys in several orgs).
+    oc = get_openai_config()
+    if oc.get("organization_id"):
+        headers["OpenAI-Organization"] = oc["organization_id"]
+    if oc.get("project_id"):
+        headers["OpenAI-Project"] = oc["project_id"]
+    return headers
 
 
 def _raise_for_api_error(resp) -> None:

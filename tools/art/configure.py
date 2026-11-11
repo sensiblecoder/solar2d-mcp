@@ -32,6 +32,14 @@ TOOL = Tool(
                 "type": "string",
                 "description": f"Image model used when a call names none (default: {DEFAULT_MODEL})"
             },
+            "organization_id": {
+                "type": "string",
+                "description": "Optional OpenAI organization ID (org-...) to send requests under. Pass an empty string to clear."
+            },
+            "project_id": {
+                "type": "string",
+                "description": "Optional OpenAI project ID (proj_...) to send requests under. Pass an empty string to clear."
+            },
             "transparent_model": {
                 "type": "string",
                 "description": f"Model used for background=transparent when a call names none (default: {DEFAULT_TRANSPARENT_MODEL})"
@@ -59,7 +67,16 @@ async def handle(arguments: dict) -> list[TextContent]:
         oc["default_model"] = default_model
     if transparent_model:
         oc["transparent_model"] = transparent_model
-    if api_key or default_model or transparent_model:
+    changed = bool(api_key or default_model or transparent_model)
+    for field in ("organization_id", "project_id"):
+        if field in arguments:
+            value = (arguments[field] or "").strip()
+            if value:
+                oc[field] = value
+            else:
+                oc.pop(field, None)
+            changed = True
+    if changed:
         save_openai_config(oc)
 
     key = get_api_key()
@@ -87,6 +104,8 @@ async def handle(arguments: dict) -> list[TextContent]:
         f"OpenAI key {mask(key)} (from {source}) works.",
         f"Default model: {model}{flag(model)}",
         f"Transparent-background model: {tmodel}{flag(tmodel)}",
+        *([f"Organization: {oc['organization_id']}"] if oc.get("organization_id") else []),
+        *([f"Project: {oc['project_id']}"] if oc.get("project_id") else []),
         "",
         "Image models available to this key:",
         *[f"  - {m}" for m in models],

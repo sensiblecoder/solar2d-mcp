@@ -202,7 +202,8 @@ These integrations are in progress and their tool surface may change:
   (`pip install -e ".[art]"`):
   - `configure_art_generation` - Save an OpenAI API key, check it, and list the image models
     it can use. The key goes in `~/.config/solar2d-mcp/config.json` (owner-only permissions),
-    never the project; `OPENAI_API_KEY` in the server's environment works too.
+    never the project; `OPENAI_API_KEY` in the server's environment works too. Optional
+    `organization_id` / `project_id` send requests under a specific org or project.
   - `generate_art` - Prompt to image. `size`, `quality` (`low` for drafts), `background:
     transparent` for sprites, `n` variations, `model` (default `gpt-image-2`; `gpt-image-1.5` for transparent backgrounds, which `gpt-image-2` rejects).
   - `edit_art` - Rework existing images or draw new art that matches them: pass reference
