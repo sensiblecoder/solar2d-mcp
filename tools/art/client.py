@@ -1,5 +1,5 @@
 """
-OpenAI Images API client — key lookup, requests, and saving results.
+OpenAI Images API client (plus helpers shared with the Black Forest Labs client) — key lookup, requests, and saving results.
 
 The API key lives in ~/.config/solar2d-mcp/config.json (section "openai"), never in
 the repo. OPENAI_API_KEY in the environment is used when the config has no key.
@@ -41,6 +41,17 @@ def save_openai_config(openai: dict) -> None:
 def get_api_key() -> str | None:
     """Configured key, else OPENAI_API_KEY from the environment."""
     return get_openai_config().get("api_key") or os.environ.get("OPENAI_API_KEY")
+
+
+def get_default_provider() -> str:
+    """openai or bfl, from config["art"]["default_provider"] (default openai)."""
+    return _load_config().get("art", {}).get("default_provider") or "openai"
+
+
+def set_default_provider(provider: str) -> None:
+    config = _load_config()
+    config.setdefault("art", {})["default_provider"] = provider
+    _save_config(config)
 
 
 def get_default_model(background: str | None = None) -> str:
@@ -191,6 +202,11 @@ def _sniff_mime(data: bytes) -> str:
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return "image/webp"
     return "image/jpeg"
+
+
+def sniff_ext(data: bytes) -> str:
+    """File extension matching the bytes actually returned (providers may ignore output_format)."""
+    return {"image/png": "png", "image/webp": "webp"}.get(_sniff_mime(data), "jpg")
 
 
 def usage_line(response: dict) -> str:

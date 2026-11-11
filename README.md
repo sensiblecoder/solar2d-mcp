@@ -198,20 +198,24 @@ These integrations are in progress and their tool surface may change:
   `comment_trello_card`, `attach_to_trello_card`
 - **Social media** - Draft and publish posts:
   `configure_social_media`, `preview_social_post`, `publish_social_post`
-- **AI art (OpenAI image models)** - Generate sprites, backgrounds, icons and UI art
-  (`pip install -e ".[art]"`):
-  - `configure_art_generation` - Save an OpenAI API key, check it, and list the image models
-    it can use. The key goes in `~/.config/solar2d-mcp/config.json` (owner-only permissions),
-    never the project; `OPENAI_API_KEY` in the server's environment works too. Optional
+- **AI art (OpenAI GPT Image / Black Forest Labs FLUX)** - Generate sprites, backgrounds, icons
+  and UI art (`pip install -e ".[art]"`):
+  - `configure_art_generation` - Save API keys, check them (OpenAI: image models the key can use;
+    BFL: credit balance), pick the `default_provider` (`openai` or `bfl`) and default models.
+    Keys go in `~/.config/solar2d-mcp/config.json` (owner-only permissions), never the project;
+    `OPENAI_API_KEY` / `BFL_API_KEY` in the server's environment work too. Optional OpenAI
     `organization_id` / `project_id` send requests under a specific org or project.
-  - `generate_art` - Prompt to image. `size`, `quality` (`low` for drafts), `background:
-    transparent` for sprites, `n` variations, `model` (default `gpt-image-2.5-sunburst`; `gpt-image-2` is deprecated).
-  - `edit_art` - Rework existing images or draw new art that matches them: pass reference
-    images (sprites, a simulator screenshot) and optionally a `mask` to redraw one region.
-  - GPT Image models need OpenAI organization verification; an org without image access gets
-    429 "TPM: Limit 0" on every image model.
+  - `generate_art` - Prompt to image. `provider`, `model`, `size`, `n` variations, `output_format`.
+    OpenAI only: `quality` (`low` for drafts), `background: transparent` for sprites. BFL only: `seed`.
+  - `edit_art` - Rework existing images or draw new art that matches them: pass reference images
+    (sprites, a simulator screenshot). OpenAI only: a `mask` to redraw one region.
   - Files are saved full-size to `save_to` (e.g. `<project>/images/hero.png`) or
     `~/Pictures/solar2d-mcp/<project>/art/`; the tool returns a downscaled preview.
+  - OpenAI: default `gpt-image-2.5-sunburst` (`gpt-image-2` is deprecated). GPT Image models need
+    OpenAI organization verification; an org without image access gets 429 "TPM: Limit 0".
+  - Black Forest Labs: default `flux-2-pro`; also `flux-3-image` (newest, up to 10 references),
+    `flux-2-max`, `flux-2-flex`, `flux-2-klein-9b`. No transparent output. Tasks are submitted,
+    polled and downloaded automatically; an account without credits gets 402.
 
 ### Possible Plans
 
@@ -242,7 +246,7 @@ solar2d-mcp/
 │   ├── touch.py       # Touch/drag simulation tools
 │   ├── state.py       # Game state & test scenario tools
 │   ├── solar_scope.py # SolarScope test-runner tools
-│   ├── art/           # OpenAI image generation tools (experimental)
+│   ├── art/           # OpenAI / Black Forest Labs image generation tools (experimental)
 │   ├── social/        # Social media tools (experimental)
 │   └── trello/        # Trello board tools (experimental)
 ├── capture/
