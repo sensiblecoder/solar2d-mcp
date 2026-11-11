@@ -216,7 +216,8 @@ These integrations are in progress and their tool surface may change:
   - `remove_background` - Make any image's background transparent, locally and free: `chroma`
     keys out a flat colour (crisp pixel-art edges, clears enclosed gaps), `vision` uses Apple's
     on-device subject cutout for busy or painted backgrounds (macOS 14+, `capture/cutout.swift`
-    compiled on first use), `auto` picks chroma when the border is one flat colour.
+    compiled on first use), `auto` picks chroma when the border is one flat colour, `difference`
+    computes partial alpha from the same art on white (`image`) and on black (`black_image`).
   - Black Forest Labs: default `flux-2-pro`; also `flux-3-image` (newest, up to 10 references),
     `flux-2-max`, `flux-2-flex`, `flux-2-klein-9b`. Tasks are submitted, polled and downloaded
     automatically; an account without credits gets 402.
@@ -226,6 +227,14 @@ These integrations are in progress and their tool surface may change:
     background becomes a soft black shadow (`keep_shadows: false` drops it). Transparent pixels
     are zeroed so texture filtering can't bleed colour. The un-cut image is kept as
     `<name>-original.png` so a cutout can be redone with `remove_background` at no cost.
+  - **`cutout: "difference"`** for glows, sparkles, smoke, glass and soft shadows: the art is
+    rendered on white, then that render is edited onto black, and alpha is computed from the
+    pair (`a = 1 - (white - black)/255`, colour un-mixed from both), so effects come out
+    genuinely semi-transparent instead of cut or solid. Costs two renders (~8-10c). If the black
+    edit doesn't repaint the background (flux-3-image ignored it in testing) or the renders don't
+    line up, the black pass is retried with `flux-2-pro`, then falls back to an Apple Vision
+    cutout of the white render. Both renders are kept as `<name>-white.png` / `<name>-black.png`;
+    `remove_background` with `method: "difference"` and `black_image` re-mattes them for free.
 
 ### Possible Plans
 

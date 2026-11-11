@@ -65,10 +65,12 @@ _COMMON_PROPERTIES = {
     },
     "cutout": {
         "type": "string",
-        "enum": ["auto", "chroma", "vision"],
+        "enum": ["auto", "chroma", "vision", "difference"],
         "description": (
-            "bfl + transparent: how the background is removed. chroma keys out the flat colour (crisp pixel-art edges), "
-            "vision uses Apple's subject cutout (soft or painted art), auto (default) uses chroma when the border is flat."
+            "bfl + transparent: how the background is removed. chroma keys out flat magenta (crisp pixel-art edges, one "
+            "render), vision uses Apple's subject cutout, auto (default) uses chroma when the border is flat. difference "
+            "renders on white, then edits that render onto black, and computes real partial alpha from the pair: use it for "
+            "glows, sparkles, smoke, glass and soft shadows. Costs two renders per image."
         )
     },
     "keep_shadows": {
@@ -161,13 +163,22 @@ REMOVE_BACKGROUND_TOOL = Tool(
         "Make an image's background transparent, locally and for free: existing sprites, art from any provider, "
         "screenshots. chroma removes a flat background colour (crisp edges, also clears enclosed gaps); vision uses "
         "Apple's on-device subject cutout for painted or busy backgrounds (macOS 14+); auto picks chroma when the "
-        "border is one flat colour. Writes a PNG with alpha and returns a preview."
+        "border is one flat colour; difference computes real partial alpha from the same art on white (image) and on "
+        "black (black_image). Writes a PNG with alpha and returns a preview."
     ),
     inputSchema={
         "type": "object",
         "properties": {
             "image": {"type": "string", "description": "Path to the image."},
-            "method": {"type": "string", "enum": ["auto", "chroma", "vision"], "description": "Default auto."},
+            "method": {
+                "type": "string",
+                "enum": ["auto", "chroma", "vision", "difference"],
+                "description": "Default auto. difference: image is the art on white, black_image the same art on black."
+            },
+            "black_image": {
+                "type": "string",
+                "description": "difference: path to the same art rendered on pure black (image must be the one on white)."
+            },
             "key_color": {
                 "type": "string",
                 "description": "chroma: background colour to remove as #RRGGBB (default: detected from the border)."
@@ -234,8 +245,11 @@ def _resolve_images(arguments: dict) -> tuple[list[Path], Path | None, str | Non
 
 
 def _save_and_report(images: list[bytes], arguments: dict, header: str, notes: list[str],
-                     originals: list[bytes] | None = None) -> list[TextContent | ImageContent]:
-    """Write images (and, for local cutouts, the un-cut originals as <name>-original.<ext>) and report them."""
+                     originals: list[dict[str, bytes]] | None = None) -> list[TextContent | ImageContent]:
+    """
+    Write images and report them. originals (local cutouts): per image, {suffix: bytes} of the renders
+    before cutout, written as <name>-<suffix>.<ext>.
+    """
     if not images:
         return _text("Error: the API returned no images.")
     ext = sniff_ext(images[0])
@@ -252,10 +266,11 @@ def _save_and_report(images: list[bytes], arguments: dict, header: str, notes: l
     if originals:
         # Kept so a cutout can be redone with remove_background without paying for a new image.
         kept = []
-        for data, path in zip(originals, paths):
-            original = path.with_name(f"{path.stem}-original.{sniff_ext(data)}")
-            original.write_bytes(data)
-            kept.append(original)
+        for renders, path in zip(originals, paths):
+            for suffix, data in renders.items():
+                original = path.with_name(f"{path.stem}-{suffix}.{sniff_ext(data)}")
+                original.write_bytes(data)
+                kept.append(original)
         lines.append("  Before cutout: " + ", ".join(str(k) for k in kept))
     return [TextContent(type="text", text="\n".join(lines)), *contents]
 
@@ -309,6 +324,9 @@ async def _bfl_run(arguments: dict, references: list[bytes], verb: str) -> list[
     n = int(arguments.get("n") or 1)
     seed = arguments.get("seed")
     transparent = arguments.get("background") == "transparent"
+    method = arguments.get("cutout") or "auto"
+    if transparent and method == "difference":
+        return await _bfl_difference(arguments, references, verb, model, n, seed)
     prompt = arguments["prompt"]
     output_format = arguments.get("output_format")
     if transparent:
@@ -324,10 +342,9 @@ async def _bfl_run(arguments: dict, references: list[bytes], verb: str) -> list[
     results = await asyncio.gather(*(bfl.generate(model, body) for body in bodies))
     images = [r[0] for r in results]
     cut_notes = []
-    originals: list[bytes] = []
+    originals: list[dict[str, bytes]] = []
     if transparent:
-        method = arguments.get("cutout") or "auto"
-        originals = images
+        originals = [{"original": img} for img in images]
         keep_shadows = arguments.get("keep_shadows", True)
         cut = await asyncio.gather(*(cutout.remove_background(img, method, keep_shadows=keep_shadows) for img in images))
         images = [c[0] for c in cut]
@@ -340,6 +357,64 @@ async def _bfl_run(arguments: dict, references: list[bytes], verb: str) -> list[
         notes.append("Note: flux-3 models ignore seed.")
     notes += cut_notes
     return _save_and_report(images, arguments, f"{verb} {len(images)} image(s) with bfl/{model}:", notes, originals)
+
+
+def _size_of(image: bytes) -> str:
+    from io import BytesIO
+
+    from PIL import Image
+
+    w, h = Image.open(BytesIO(image)).size
+    return f"{w}x{h}"
+
+
+async def _bfl_difference(arguments: dict, references: list[bytes], verb: str, model: str, n: int,
+                          seed: int | None) -> list[TextContent | ImageContent]:
+    """Transparent art from two renders: on white, then the same image edited onto black."""
+    white_refs = [cutout.flatten_on_key(r, (255, 255, 255)) for r in references]
+    prompt = arguments["prompt"] + cutout.WHITE_PROMPT
+    seeds = [seed + i if seed is not None else None for i in range(n)]
+    whites = await asyncio.gather(*(
+        bfl.generate(model, bfl.build_body(model, prompt, white_refs, arguments.get("size"), s, "png")) for s in seeds))
+
+    async def black_pass(white: bytes, s: int | None) -> tuple[bytes, str, list[dict], bytes]:
+        """
+        Edit the white render onto black and matte the pair. If the model ignores the edit (flux-3-image
+        left the background white in testing), retry once with flux-2-pro, which follows it reliably.
+        Returns (black render, description, task infos, matte).
+        """
+        tried = []
+        for m in dict.fromkeys([model, "flux-2-pro"]):
+            body = bfl.build_body(m, cutout.BLACK_EDIT_PROMPT, [white], _size_of(white), s, "png")
+            black, info = await bfl.generate(m, body)
+            tried.append(info)
+            matte, how, stats = cutout.difference_matte(white, black)
+            if stats["ok"]:
+                note = "" if m == model else f" (black pass redone with {m}: {model} did not repaint the background)"
+                return black, how + note, tried, matte
+        # Neither pass is usable: cut the white render out with Apple Vision instead.
+        matte, fallback = await cutout.remove_background(white, "vision")
+        return black, (f"black pass unusable ({stats['both_white']:.0%} still white, {stats['mismatch']:.0%} misaligned); "
+                       f"used {fallback} on the white render"), tried, matte
+
+    passes = await asyncio.gather(*(black_pass(wr[0], s) for wr, s in zip(whites, seeds)))
+
+    images, originals, cut_notes, black_tasks = [], [], [], []
+    for (white, _), (black, how, tried, matte) in zip(whites, passes):
+        images.append(matte)
+        originals.append({"white": white, "black": black})
+        cut_notes.append(f"Background removed: {how}")
+        black_tasks += tried
+
+    tasks = [r[1] for r in whites] + black_tasks
+    costs = [t["cost"] for t in tasks if t.get("cost") is not None]
+    seconds = max(w[1]["seconds"] for w in whites) + sum(t["seconds"] for t in black_tasks) / max(1, n)
+    notes = [f"Tasks: {len(tasks)} ({n} on white, then edited onto black; ~{seconds:.0f}s)"]
+    if costs:
+        notes.append(f"Cost: {sum(costs):g} credits (1 credit = $0.01)")
+    notes += cut_notes
+    return _save_and_report(images, arguments, f"{verb} {len(images)} image(s) with bfl/{model} (difference matte):",
+                            notes, originals)
 
 
 # --- Handlers ---------------------------------------------------------------------------------
@@ -384,6 +459,12 @@ async def handle_remove_background(arguments: dict) -> list[TextContent | ImageC
     if not source.is_file():
         return _text(f"Error: image not found: {source}")
     try:
+        if arguments.get("method") == "difference":
+            black = Path(arguments.get("black_image") or "").expanduser()
+            if not black.is_file():
+                return _text("Error: method=difference needs black_image: the same art rendered on pure black.")
+            data, how, _ = cutout.difference_matte(source.read_bytes(), black.read_bytes())
+            return _write_cutout(source, arguments, data, how)
         key = cutout.parse_hex(arguments["key_color"]) if arguments.get("key_color") else None
         data, how = await cutout.remove_background(
             source.read_bytes(), arguments.get("method") or "auto", key, int(arguments.get("tolerance", cutout.TOLERANCE)),
@@ -391,6 +472,10 @@ async def handle_remove_background(arguments: dict) -> list[TextContent | ImageC
     except Exception as e:
         return _text(f"Error removing background: {e}")
 
+    return _write_cutout(source, arguments, data, how)
+
+
+def _write_cutout(source: Path, arguments: dict, data: bytes, how: str) -> list[TextContent | ImageContent]:
     target = Path(arguments["save_to"]).expanduser() if arguments.get("save_to") else source.with_name(f"{source.stem}-transparent.png")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(data)

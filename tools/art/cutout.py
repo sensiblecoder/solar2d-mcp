@@ -2,7 +2,11 @@
 Background removal — turn generated art into transparent sprites without a provider that
 supports alpha (Black Forest Labs has none).
 
-Two methods:
+Three methods:
+- difference: two renders of the same art, on white and on black. A pixel's alpha is how little it
+  changed between them, and its colour is un-mixed from both; this recovers real partial
+  transparency (glows, sparkles, smoke, glass, soft shadows) that keying can only cut or keep.
+  Costs a second render. See difference_matte.
 - chroma: the art is drawn on a flat key colour (magenta by default); every pixel near that
   colour becomes transparent, with a soft ramp and de-spill at the edges. Keeps hard pixel-art
   edges and also clears enclosed gaps (between arms, inside handles). Pillow only.
@@ -28,6 +32,24 @@ KEY_PROMPT = (
     " Isolated on a perfectly flat, solid pure magenta (#FF00FF) background filling the whole frame:"
     " no gradient, no texture, no floor, no cast shadow, no other objects, and no magenta or pink in the subject itself."
 )
+
+WHITE_PROMPT = (
+    " Isolated on a perfectly flat, solid pure white (#FFFFFF) background filling the whole frame:"
+    " no gradient, no texture, no floor, no other objects."
+)
+BLACK_EDIT_PROMPT = (
+    "Replace only the white background with perfectly flat, solid pure black (#000000) everywhere white background"
+    " shows, including gaps enclosed by the subject. Keep the subject pixel-for-pixel identical: same position, size,"
+    " pose, colours, outlines, glow and shading. Do not add, move, recolour or relight anything."
+)
+
+# difference_matte: alpha within this of 0/1 snaps to it (render-to-render noise on the subject and background).
+SNAP = 0.04
+# In a matched pair, white - black is the same in every channel ((1-a)*255). A channel straying this far
+# from the pixel's mean difference (or black brighter than white) means the renders don't line up there.
+MISMATCH = 40
+MAX_MISMATCH = 0.03  # share of such pixels above which the pair is rejected
+MAX_BOTH_WHITE = 0.10  # share of pixels white in both renders above which the black pass is deemed to have failed
 
 # Distance is the largest per-channel difference from the key colour (0-255).
 TOLERANCE = 60      # at or below: fully transparent
@@ -299,3 +321,69 @@ def flatten_on_key(image_bytes: bytes, key: tuple[int, int, int] = KEY_COLOR) ->
     buf = BytesIO()
     base.convert("RGB").save(buf, format="PNG")
     return buf.getvalue()
+
+
+def difference_matte(white_bytes: bytes, black_bytes: bytes) -> tuple[bytes, str, dict]:
+    """
+    Alpha from a white-background and a black-background render of the same art.
+
+    Composited over white, a pixel is a*F + (1-a)*255; over black it is a*F. So
+    white - black = (1-a)*255, i.e. a = 1 - (white - black)/255 (averaged over channels),
+    and F is un-mixed from both renders. Returns (PNG bytes, description, stats).
+    stats["mismatch"] is the share of pixels whose white-black difference is not the same in every
+    channel (or negative), which only happens where the second render moved or changed the subject;
+    stats["both_white"] is the share left white in the black render (background it didn't repaint);
+    stats["ok"] is False when either is too high for the matte to be trusted.
+    """
+    from PIL import Image
+
+    white = Image.open(BytesIO(white_bytes)).convert("RGB")
+    black = Image.open(BytesIO(black_bytes)).convert("RGB")
+    resized = black.size != white.size
+    if resized:
+        black = black.resize(white.size, Image.LANCZOS)
+
+    out = []
+    mismatched = both_white = 0
+    for (wr, wg, wb), (br, bg, bb) in zip(_pixels(white), _pixels(black)):
+        dr, dg, db = wr - br, wg - bg, wb - bb
+        mean = (dr + dg + db) / 3
+        if min(dr, dg, db) < -MISMATCH or max(abs(dr - mean), abs(dg - mean), abs(db - mean)) > MISMATCH:
+            mismatched += 1
+        if min(wr, wg, wb, br, bg, bb) >= 245:
+            both_white += 1
+        a = 1 - ((wr - br) + (wg - bg) + (wb - bb)) / (3 * 255)
+        if a >= 1 - SNAP:
+            a = 1.0
+        elif a <= SNAP:
+            out.append((0, 0, 0, 0))
+            continue
+        # Un-mix: from black, F = B/a; from white, F = (W - (1-a)*255)/a. Average the two estimates.
+        colour = []
+        for w_c, b_c in ((wr, br), (wg, bg), (wb, bb)):
+            f = ((b_c / a) + (w_c - (1 - a) * 255) / a) / 2
+            colour.append(max(0, min(255, round(f))))
+        out.append((colour[0], colour[1], colour[2], round(a * 255)))
+
+    total = white.size[0] * white.size[1]
+    result = Image.new("RGBA", white.size)
+    putdata = getattr(result, "putdata")
+    putdata(out)
+    alpha = result.getchannel("A")
+    clear = alpha.histogram()[0] / total
+    partial = sum(alpha.histogram()[1:255]) / total
+    mismatch = mismatched / total
+
+    notes = [f"difference matte; {clear:.0%} transparent, {partial:.1%} semi-transparent"]
+    if resized:
+        notes.append("black render resized to match")
+    if mismatch > 0.002:
+        notes.append(f"{mismatch:.1%} of pixels misaligned between renders")
+    if both_white / total > 0.005:
+        notes.append(f"{both_white / total:.1%} white in both renders (enclosed gaps the black pass didn't repaint?)")
+
+    buf = BytesIO()
+    result.save(buf, format="PNG", optimize=True)
+    stats = {"mismatch": mismatch, "both_white": both_white / total}
+    stats["ok"] = mismatch <= MAX_MISMATCH and stats["both_white"] <= MAX_BOTH_WHITE
+    return buf.getvalue(), "; ".join(notes), stats
