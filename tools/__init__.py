@@ -5,6 +5,7 @@ Solar2D MCP Tools - Tool definitions and dispatcher.
 from mcp.types import ImageContent, TextContent, Tool
 
 from tools import (
+    art,
     configure,
     list_projects,
     read_logs,
@@ -31,6 +32,7 @@ TOOLS: list[Tool] = [
     *solar_scope.TOOLS,  # Include SolarScope test-runner tools
     *social.TOOLS,  # Include social media tools
     *trello.TOOLS,  # Include Trello tools
+    *art.TOOLS,  # Include AI art generation tools
 ]
 
 # Map tool names to handlers
@@ -51,6 +53,7 @@ _HANDLERS = {
     **state.HANDLERS,  # Game state and scenario handlers
     **social.HANDLERS,  # Social media handlers
     **trello.HANDLERS,  # Trello handlers
+    **art.HANDLERS,  # AI art generation handlers
 }
 
 

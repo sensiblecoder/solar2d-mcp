@@ -198,6 +198,17 @@ These integrations are in progress and their tool surface may change:
   `comment_trello_card`, `attach_to_trello_card`
 - **Social media** - Draft and publish posts:
   `configure_social_media`, `preview_social_post`, `publish_social_post`
+- **AI art (OpenAI image models)** - Generate sprites, backgrounds, icons and UI art
+  (`pip install -e ".[art]"`):
+  - `configure_art_generation` - Save an OpenAI API key, check it, and list the image models
+    it can use. The key goes in `~/.config/solar2d-mcp/config.json` (owner-only permissions),
+    never the project; `OPENAI_API_KEY` in the server's environment works too.
+  - `generate_art` - Prompt to image. `size`, `quality` (`low` for drafts), `background:
+    transparent` for sprites, `n` variations, `model` (default `gpt-image-2`; `gpt-image-1.5` for transparent backgrounds, which `gpt-image-2` rejects).
+  - `edit_art` - Rework existing images or draw new art that matches them: pass reference
+    images (sprites, a simulator screenshot) and optionally a `mask` to redraw one region.
+  - Files are saved full-size to `save_to` (e.g. `<project>/images/hero.png`) or
+    `~/Pictures/solar2d-mcp/<project>/art/`; the tool returns a downscaled preview.
 
 ### Possible Plans
 
@@ -228,6 +239,7 @@ solar2d-mcp/
 │   ├── touch.py       # Touch/drag simulation tools
 │   ├── state.py       # Game state & test scenario tools
 │   ├── solar_scope.py # SolarScope test-runner tools
+│   ├── art/           # OpenAI image generation tools (experimental)
 │   ├── social/        # Social media tools (experimental)
 │   └── trello/        # Trello board tools (experimental)
 ├── capture/
