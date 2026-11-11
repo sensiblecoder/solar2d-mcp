@@ -10,7 +10,7 @@ from pathlib import Path
 
 from mcp.types import ImageContent, TextContent, Tool
 
-from tools.art import bfl
+from tools.art import bfl, cutout
 from tools.art.client import (
     decode_images,
     get_default_model,
@@ -58,7 +58,22 @@ _COMMON_PROPERTIES = {
     "background": {
         "type": "string",
         "enum": ["transparent", "opaque", "auto"],
-        "description": "openai only: transparent for sprites, icons and UI pieces (needs png or webp). bfl has no transparent output."
+        "description": (
+            "transparent for sprites, icons and UI pieces. openai: native alpha (png or webp). bfl has no alpha output, so "
+            "the art is drawn on flat magenta and the background is removed locally (see cutout); output is always png."
+        )
+    },
+    "cutout": {
+        "type": "string",
+        "enum": ["auto", "chroma", "vision"],
+        "description": (
+            "bfl + transparent: how the background is removed. chroma keys out the flat colour (crisp pixel-art edges), "
+            "vision uses Apple's subject cutout (soft or painted art), auto (default) uses chroma when the border is flat."
+        )
+    },
+    "keep_shadows": {
+        "type": "boolean",
+        "description": "bfl + transparent (chroma): turn a cast shadow drawn on the background into a soft black shadow (default true) or remove it."
     },
     "output_format": {
         "type": "string",
@@ -140,7 +155,43 @@ EDIT_TOOL = Tool(
     },
 )
 
-TOOLS = [GENERATE_TOOL, EDIT_TOOL]
+REMOVE_BACKGROUND_TOOL = Tool(
+    name="remove_background",
+    description=(
+        "Make an image's background transparent, locally and for free: existing sprites, art from any provider, "
+        "screenshots. chroma removes a flat background colour (crisp edges, also clears enclosed gaps); vision uses "
+        "Apple's on-device subject cutout for painted or busy backgrounds (macOS 14+); auto picks chroma when the "
+        "border is one flat colour. Writes a PNG with alpha and returns a preview."
+    ),
+    inputSchema={
+        "type": "object",
+        "properties": {
+            "image": {"type": "string", "description": "Path to the image."},
+            "method": {"type": "string", "enum": ["auto", "chroma", "vision"], "description": "Default auto."},
+            "key_color": {
+                "type": "string",
+                "description": "chroma: background colour to remove as #RRGGBB (default: detected from the border)."
+            },
+            "tolerance": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255,
+                "description": f"chroma: how far from the key colour still counts as background (default {cutout.TOLERANCE}). Raise for JPEG noise, lower if the subject is eaten."
+            },
+            "keep_shadows": {
+                "type": "boolean",
+                "description": "chroma: turn a shadow drawn on the background colour into a soft black shadow (default true) or remove it."
+            },
+            "save_to": {
+                "type": "string",
+                "description": "Output PNG path (default: <image name>-transparent.png next to the source)."
+            },
+        },
+        "required": ["image"],
+    },
+)
+
+TOOLS = [GENERATE_TOOL, EDIT_TOOL, REMOVE_BACKGROUND_TOOL]
 
 _OPENAI_PARAMS = ("size", "quality", "background", "output_format", "n")
 
@@ -162,11 +213,8 @@ def _validate(arguments: dict, provider: str) -> str | None:
         return f"Error: provider must be one of {', '.join(PROVIDERS)}."
     if not (arguments.get("prompt") or "").strip():
         return "Error: prompt is required."
-    if arguments.get("background") == "transparent":
-        if provider == "bfl":
-            return "Error: Black Forest Labs models have no transparent output; use provider=openai for transparent sprites."
-        if arguments.get("output_format") == "jpeg":
-            return "Error: background=transparent needs output_format png or webp."
+    if arguments.get("background") == "transparent" and arguments.get("output_format") == "jpeg":
+        return "Error: background=transparent needs output_format png or webp."
     if provider == "bfl" and arguments.get("mask"):
         return "Error: mask is openai only; with bfl, describe the region to change in the prompt instead."
     return None
@@ -185,7 +233,9 @@ def _resolve_images(arguments: dict) -> tuple[list[Path], Path | None, str | Non
     return image_paths, mask_path, None
 
 
-def _save_and_report(images: list[bytes], arguments: dict, header: str, notes: list[str]) -> list[TextContent | ImageContent]:
+def _save_and_report(images: list[bytes], arguments: dict, header: str, notes: list[str],
+                     originals: list[bytes] | None = None) -> list[TextContent | ImageContent]:
+    """Write images (and, for local cutouts, the un-cut originals as <name>-original.<ext>) and report them."""
     if not images:
         return _text("Error: the API returned no images.")
     ext = sniff_ext(images[0])
@@ -199,6 +249,14 @@ def _save_and_report(images: list[bytes], arguments: dict, header: str, notes: l
             contents.append(ImageContent(type="image", data=shown[0], mimeType=shown[1]))
 
     lines = [header, *[f"  {p}" for p in paths], *[f"  {n}" for n in notes if n]]
+    if originals:
+        # Kept so a cutout can be redone with remove_background without paying for a new image.
+        kept = []
+        for data, path in zip(originals, paths):
+            original = path.with_name(f"{path.stem}-original.{sniff_ext(data)}")
+            original.write_bytes(data)
+            kept.append(original)
+        lines.append("  Before cutout: " + ", ".join(str(k) for k in kept))
     return [TextContent(type="text", text="\n".join(lines)), *contents]
 
 
@@ -250,21 +308,38 @@ async def _bfl_run(arguments: dict, references: list[bytes], verb: str) -> list[
     model = arguments.get("model") or bfl.get_default_model()
     n = int(arguments.get("n") or 1)
     seed = arguments.get("seed")
+    transparent = arguments.get("background") == "transparent"
+    prompt = arguments["prompt"]
+    output_format = arguments.get("output_format")
+    if transparent:
+        # BFL has no alpha output: draw on flat magenta, then key it out locally.
+        prompt += cutout.KEY_PROMPT
+        output_format = "png"  # lossless, so the key colour stays exact (flux-3 picks its own format)
+        references = [cutout.flatten_on_key(r) for r in references]
     bodies = []
     for i in range(n):
         # Each BFL task makes one image; offset a fixed seed so variations differ.
         task_seed = seed + i if seed is not None else None
-        bodies.append(bfl.build_body(model, arguments["prompt"], references, arguments.get("size"), task_seed,
-                                     arguments.get("output_format")))
+        bodies.append(bfl.build_body(model, prompt, references, arguments.get("size"), task_seed, output_format))
     results = await asyncio.gather(*(bfl.generate(model, body) for body in bodies))
     images = [r[0] for r in results]
+    cut_notes = []
+    originals: list[bytes] = []
+    if transparent:
+        method = arguments.get("cutout") or "auto"
+        originals = images
+        keep_shadows = arguments.get("keep_shadows", True)
+        cut = await asyncio.gather(*(cutout.remove_background(img, method, keep_shadows=keep_shadows) for img in images))
+        images = [c[0] for c in cut]
+        cut_notes = [f"Background removed: {c[1]}" for c in cut]
     costs = [r[1].get("cost") for r in results if r[1].get("cost") is not None]
     notes = [f"Tasks: {', '.join(str(r[1]['id']) for r in results)} ({max(r[1]['seconds'] for r in results)}s)"]
     if costs:
         notes.append(f"Cost: {sum(costs):g} credits (1 credit = $0.01)")
     if model.startswith("flux-3") and seed is not None:
         notes.append("Note: flux-3 models ignore seed.")
-    return _save_and_report(images, arguments, f"{verb} {len(images)} image(s) with bfl/{model}:", notes)
+    notes += cut_notes
+    return _save_and_report(images, arguments, f"{verb} {len(images)} image(s) with bfl/{model}:", notes, originals)
 
 
 # --- Handlers ---------------------------------------------------------------------------------
@@ -302,3 +377,25 @@ async def handle_edit(arguments: dict) -> list[TextContent | ImageContent]:
         return await _openai_edit(arguments, image_paths, mask_path)
     except Exception as e:
         return _text(f"Error editing art: {e}")
+
+
+async def handle_remove_background(arguments: dict) -> list[TextContent | ImageContent]:
+    source = Path(arguments.get("image") or "").expanduser()
+    if not source.is_file():
+        return _text(f"Error: image not found: {source}")
+    try:
+        key = cutout.parse_hex(arguments["key_color"]) if arguments.get("key_color") else None
+        data, how = await cutout.remove_background(
+            source.read_bytes(), arguments.get("method") or "auto", key, int(arguments.get("tolerance", cutout.TOLERANCE)),
+            keep_shadows=arguments.get("keep_shadows", True))
+    except Exception as e:
+        return _text(f"Error removing background: {e}")
+
+    target = Path(arguments["save_to"]).expanduser() if arguments.get("save_to") else source.with_name(f"{source.stem}-transparent.png")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(data)
+    contents: list[TextContent | ImageContent] = [TextContent(type="text", text=f"Transparent PNG: {target}\n  {how}")]
+    shown = preview(data)
+    if shown:
+        contents.append(ImageContent(type="image", data=shown[0], mimeType=shown[1]))
+    return contents

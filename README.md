@@ -205,17 +205,27 @@ These integrations are in progress and their tool surface may change:
     Keys go in `~/.config/solar2d-mcp/config.json` (owner-only permissions), never the project;
     `OPENAI_API_KEY` / `BFL_API_KEY` in the server's environment work too. Optional OpenAI
     `organization_id` / `project_id` send requests under a specific org or project.
-  - `generate_art` - Prompt to image. `provider`, `model`, `size`, `n` variations, `output_format`.
-    OpenAI only: `quality` (`low` for drafts), `background: transparent` for sprites. BFL only: `seed`.
+  - `generate_art` - Prompt to image. `provider`, `model`, `size`, `n` variations, `output_format`,
+    `background: transparent` for sprites (see below). OpenAI only: `quality` (`low` for drafts). BFL only: `seed`.
   - `edit_art` - Rework existing images or draw new art that matches them: pass reference images
     (sprites, a simulator screenshot). OpenAI only: a `mask` to redraw one region.
   - Files are saved full-size to `save_to` (e.g. `<project>/images/hero.png`) or
     `~/Pictures/solar2d-mcp/<project>/art/`; the tool returns a downscaled preview.
   - OpenAI: default `gpt-image-2.5-sunburst` (`gpt-image-2` is deprecated). GPT Image models need
     OpenAI organization verification; an org without image access gets 429 "TPM: Limit 0".
+  - `remove_background` - Make any image's background transparent, locally and free: `chroma`
+    keys out a flat colour (crisp pixel-art edges, clears enclosed gaps), `vision` uses Apple's
+    on-device subject cutout for busy or painted backgrounds (macOS 14+, `capture/cutout.swift`
+    compiled on first use), `auto` picks chroma when the border is one flat colour.
   - Black Forest Labs: default `flux-2-pro`; also `flux-3-image` (newest, up to 10 references),
-    `flux-2-max`, `flux-2-flex`, `flux-2-klein-9b`. No transparent output. Tasks are submitted,
-    polled and downloaded automatically; an account without credits gets 402.
+    `flux-2-max`, `flux-2-flex`, `flux-2-klein-9b`. Tasks are submitted, polled and downloaded
+    automatically; an account without credits gets 402.
+  - **Transparent sprites with BFL:** no FLUX model outputs alpha, so `background: transparent`
+    asks for the art on flat magenta (transparent references are flattened onto it too), then
+    removes it locally: chroma key with de-spill of tinted edges, and a cast shadow drawn on the
+    background becomes a soft black shadow (`keep_shadows: false` drops it). Transparent pixels
+    are zeroed so texture filtering can't bleed colour. The un-cut image is kept as
+    `<name>-original.png` so a cutout can be redone with `remove_background` at no cost.
 
 ### Possible Plans
 
@@ -250,7 +260,8 @@ solar2d-mcp/
 │   ├── social/        # Social media tools (experimental)
 │   └── trello/        # Trello board tools (experimental)
 ├── capture/
-│   └── simcap.swift   # ScreenCaptureKit window recorder (built to capture/.build/)
+│   ├── simcap.swift   # ScreenCaptureKit window recorder (built to capture/.build/)
+│   └── cutout.swift   # Apple Vision subject cutout for remove_background (built to capture/.build/)
 ├── resources/
 │   ├── __init__.py    # Resource dispatcher
 │   └── info.py        # solar2d://info resource

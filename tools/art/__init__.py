@@ -16,4 +16,5 @@ HANDLERS = {
     "configure_art_generation": configure.handle,
     "generate_art": generate.handle_generate,
     "edit_art": generate.handle_edit,
+    "remove_background": generate.handle_remove_background,
 }
