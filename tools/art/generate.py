@@ -220,6 +220,66 @@ def _check_httpx() -> list[TextContent] | None:
     return None
 
 
+def _describe(e: BaseException) -> str:
+    """An exception as text; httpx timeouts and read errors have an empty message."""
+    return str(e) or type(e).__name__
+
+
+_SUFFIX_FORMATS = {".png": "png", ".jpg": "jpeg", ".jpeg": "jpeg", ".webp": "webp"}
+
+
+def _format_from_save_to(arguments: dict) -> dict:
+    """
+    When save_to names an image file and output_format isn't given, ask for that file's format, so
+    hero.png doesn't end up holding JPEG bytes (BFL FLUX.2 returns jpeg by default).
+    """
+    save_to = arguments.get("save_to")
+    if arguments.get("output_format") or not save_to:
+        return arguments
+    fmt = _SUFFIX_FORMATS.get(Path(save_to).suffix.lower())
+    if not fmt or Path(save_to).expanduser().is_dir():
+        return arguments
+    if fmt == "jpeg" and arguments.get("background") == "transparent":
+        return arguments  # transparent output is always png/webp; _save_and_report flags the suffix
+    return {**arguments, "output_format": fmt}
+
+
+async def _gather_tasks(coros) -> tuple[list, list[str]]:
+    """
+    Run provider tasks together. One failure (e.g. one variation moderated) doesn't discard the others,
+    which were paid for: returns the successes and notes about the failures; raises only if all failed.
+    """
+    results = await asyncio.gather(*coros, return_exceptions=True)
+    done = [r for r in results if not isinstance(r, BaseException)]
+    failed = [r for r in results if isinstance(r, BaseException)]
+    if not done:
+        raise failed[0]
+    notes = []
+    if failed:
+        reasons = "; ".join(dict.fromkeys(_describe(e) for e in failed))
+        notes.append(f"{len(failed)} of {len(results)} task(s) failed: {reasons}")
+    return done, notes
+
+
+async def _cutout_or_keep(image: bytes, method: str, keep_shadows: bool) -> tuple[bytes, str, bool]:
+    """
+    (image, note, cut): the image with its background removed, or, if that fails (Vision finds no
+    subject, compile error), the render itself as PNG so the paid-for image is still saved.
+    """
+    try:
+        data, how = await cutout.remove_background(image, method, keep_shadows=keep_shadows)
+        return data, f"Background removed: {how}", True
+    except Exception as e:
+        from io import BytesIO
+
+        from PIL import Image
+
+        buf = BytesIO()
+        Image.open(BytesIO(image)).save(buf, format="PNG")
+        return buf.getvalue(), (f"Background NOT removed ({_describe(e)}); saved the render as is. "
+                                "Retry with remove_background (e.g. method=chroma with key_color)."), False
+
+
 def _validate(arguments: dict, provider: str) -> str | None:
     if provider not in PROVIDERS:
         return f"Error: provider must be one of {', '.join(PROVIDERS)}."
@@ -257,13 +317,19 @@ def _save_and_report(images: list[bytes], arguments: dict, header: str, notes: l
     paths = output_paths(arguments.get("save_to"), arguments.get("project_path"), arguments["prompt"], len(images), ext)
 
     contents: list[TextContent | ImageContent] = []
+    mislabelled = []
     for data, path in zip(images, paths):
         path.write_bytes(data)
+        actual = sniff_ext(data)
+        if _SUFFIX_FORMATS.get(path.suffix.lower()) != {"jpg": "jpeg"}.get(actual, actual):
+            mislabelled.append(f"{path.name} holds {actual} data")
         shown = preview(data)
         if shown:
             contents.append(ImageContent(type="image", data=shown[0], mimeType=shown[1]))
 
     lines = [header, *[f"  {p}" for p in paths], *[f"  {n}" for n in notes if n]]
+    if mislabelled:
+        lines.append(f"  Warning: {', '.join(mislabelled)} (not what save_to's extension says); rename or convert it.")
     if originals:
         # Kept so a cutout can be redone with remove_background without paying for a new image.
         kept = []
@@ -272,7 +338,8 @@ def _save_and_report(images: list[bytes], arguments: dict, header: str, notes: l
                 original = path.with_name(f"{path.stem}-{suffix}.{sniff_ext(data)}")
                 original.write_bytes(data)
                 kept.append(original)
-        lines.append("  Before cutout: " + ", ".join(str(k) for k in kept))
+        if kept:
+            lines.append("  Before cutout: " + ", ".join(str(k) for k in kept))
     return [TextContent(type="text", text="\n".join(lines)), *contents]
 
 
@@ -344,18 +411,19 @@ async def _bfl_run(arguments: dict, references: list[bytes], verb: str) -> list[
         # Each BFL task makes one image; offset a fixed seed so variations differ.
         task_seed = seed + i if seed is not None else None
         bodies.append(bfl.build_body(model, prompt, references, arguments.get("size"), task_seed, output_format))
-    results = await asyncio.gather(*(bfl.generate(model, body) for body in bodies))
+    results, failed_notes = await _gather_tasks(bfl.generate(model, body) for body in bodies)
     images = [r[0] for r in results]
     cut_notes = []
     originals: list[dict[str, bytes]] = []
     if transparent:
-        originals = [{"original": img} for img in images]
         keep_shadows = arguments.get("keep_shadows", True)
-        cut = await asyncio.gather(*(cutout.remove_background(img, method, keep_shadows=keep_shadows) for img in images))
+        cut = await asyncio.gather(*(_cutout_or_keep(img, method, keep_shadows) for img in images))
+        originals = [{"original": img} if was_cut else {} for img, (_, _, was_cut) in zip(images, cut)]
         images = [c[0] for c in cut]
-        cut_notes = [f"Background removed: {c[1]}" for c in cut]
+        cut_notes = [c[1] for c in cut]
     costs = [r[1].get("cost") for r in results if r[1].get("cost") is not None]
     notes = [f"Tasks: {', '.join(str(r[1]['id']) for r in results)} ({max(r[1]['seconds'] for r in results)}s)"]
+    notes += failed_notes
     if costs:
         notes.append(f"Cost: {sum(costs):g} credits (1 credit = $0.01)")
     if model.startswith("flux-3") and seed is not None:
@@ -379,42 +447,50 @@ async def _bfl_difference(arguments: dict, references: list[bytes], verb: str, m
     white_refs = [cutout.flatten_on_key(r, (255, 255, 255)) for r in references]
     prompt = arguments["prompt"] + cutout.WHITE_PROMPT
     seeds = [seed + i if seed is not None else None for i in range(n)]
-    whites = await asyncio.gather(*(
-        bfl.generate(model, bfl.build_body(model, prompt, white_refs, arguments.get("size"), s, "png")) for s in seeds))
+    whites, failed_notes = await _gather_tasks(
+        bfl.generate(model, bfl.build_body(model, prompt, white_refs, arguments.get("size"), s, "png")) for s in seeds)
 
-    async def black_pass(white: bytes, s: int | None) -> tuple[bytes, str, list[dict], bytes]:
+    async def black_pass(white: bytes, s: int | None) -> tuple[bytes | None, str, list[dict], bytes, bool]:
         """
         Edit the white render onto black and matte the pair. If the model ignores the edit (flux-3-image
         left the background white in testing), retry once with flux-2-pro, which follows it reliably.
-        Returns (black render, description, task infos, matte).
+        Returns (black render or None, description, task infos, matte, cut).
         """
         tried = []
+        black = None
         for m in dict.fromkeys([model, "flux-2-pro"]):
             body = bfl.build_body(m, cutout.BLACK_EDIT_PROMPT, [white], _size_of(white), s, "png")
-            black, info = await bfl.generate(m, body)
+            try:
+                black, info = await bfl.generate(m, body)
+            except Exception as e:
+                problem = f"black pass failed ({_describe(e)})"
+                break  # an API error or moderation won't go better with another model
             tried.append(info)
-            matte, how, stats = cutout.difference_matte(white, black)
+            matte, how, stats = await asyncio.to_thread(cutout.difference_matte, white, black)
             if stats["ok"]:
                 note = "" if m == model else f" (black pass redone with {m}: {model} did not repaint the background)"
-                return black, how + note, tried, matte
-        # Neither pass is usable: cut the white render out with Apple Vision instead.
-        matte, fallback = await cutout.remove_background(white, "vision")
-        return black, (f"black pass unusable ({stats['both_white']:.0%} still white, {stats['mismatch']:.0%} misaligned); "
-                       f"used {fallback} on the white render"), tried, matte
+                return black, f"Background removed: {how}{note}", tried, matte, True
+            problem = f"black pass unusable ({stats['both_white']:.0%} still white, {stats['mismatch']:.0%} misaligned)"
+        # No usable pair: cut the white render out with Apple Vision instead (or keep it as is).
+        matte, how, cut = await _cutout_or_keep(white, "vision", True)
+        return black, f"{problem}. White render: {how}", tried, matte, cut
 
     passes = await asyncio.gather(*(black_pass(wr[0], s) for wr, s in zip(whites, seeds)))
 
     images, originals, cut_notes, black_tasks = [], [], [], []
-    for (white, _), (black, how, tried, matte) in zip(whites, passes):
+    for (white, _), (black, how, tried, matte, cut) in zip(whites, passes):
         images.append(matte)
-        originals.append({"white": white, "black": black})
-        cut_notes.append(f"Background removed: {how}")
+        renders = {"white": white} if cut else {}
+        if black is not None:
+            renders["black"] = black
+        originals.append(renders)
+        cut_notes.append(how)
         black_tasks += tried
 
     tasks = [r[1] for r in whites] + black_tasks
     costs = [t["cost"] for t in tasks if t.get("cost") is not None]
     seconds = max(w[1]["seconds"] for w in whites) + sum(t["seconds"] for t in black_tasks) / max(1, n)
-    notes = [f"Tasks: {len(tasks)} ({n} on white, then edited onto black; ~{seconds:.0f}s)"]
+    notes = [f"Tasks: {len(tasks)} ({len(whites)} on white, then edited onto black; ~{seconds:.0f}s)", *failed_notes]
     if costs:
         notes.append(f"Cost: {sum(costs):g} credits (1 credit = $0.01)")
     notes += cut_notes
@@ -429,6 +505,7 @@ async def handle_generate(arguments: dict) -> list[TextContent | ImageContent]:
     if missing:
         return missing
     provider = arguments.get("provider") or get_default_provider()
+    arguments = _format_from_save_to(arguments)
     error = _validate(arguments, provider)
     if error:
         return _text(error)
@@ -437,7 +514,7 @@ async def handle_generate(arguments: dict) -> list[TextContent | ImageContent]:
             return await _bfl_run(arguments, [], "Generated")
         return await _openai_generate(arguments, "Generated")
     except Exception as e:
-        return _text(f"Error generating art: {e}")
+        return _text(f"Error generating art: {_describe(e)}")
 
 
 async def handle_edit(arguments: dict) -> list[TextContent | ImageContent]:
@@ -445,6 +522,7 @@ async def handle_edit(arguments: dict) -> list[TextContent | ImageContent]:
     if missing:
         return missing
     provider = arguments.get("provider") or get_default_provider()
+    arguments = _format_from_save_to(arguments)
     error = _validate(arguments, provider)
     if error:
         return _text(error)
@@ -456,7 +534,7 @@ async def handle_edit(arguments: dict) -> list[TextContent | ImageContent]:
             return await _bfl_run(arguments, [p.read_bytes() for p in image_paths], "Edited")
         return await _openai_edit(arguments, image_paths, mask_path)
     except Exception as e:
-        return _text(f"Error editing art: {e}")
+        return _text(f"Error editing art: {_describe(e)}")
 
 
 async def handle_remove_background(arguments: dict) -> list[TextContent | ImageContent]:
@@ -468,14 +546,14 @@ async def handle_remove_background(arguments: dict) -> list[TextContent | ImageC
             black = Path(arguments.get("black_image") or "").expanduser()
             if not black.is_file():
                 return _text("Error: method=difference needs black_image: the same art rendered on pure black.")
-            data, how, _ = cutout.difference_matte(source.read_bytes(), black.read_bytes())
+            data, how, _ = await asyncio.to_thread(cutout.difference_matte, source.read_bytes(), black.read_bytes())
             return _write_cutout(source, arguments, data, how)
         key = cutout.parse_hex(arguments["key_color"]) if arguments.get("key_color") else None
         data, how = await cutout.remove_background(
             source.read_bytes(), arguments.get("method") or "auto", key, int(arguments.get("tolerance", cutout.TOLERANCE)),
             keep_shadows=arguments.get("keep_shadows", True))
     except Exception as e:
-        return _text(f"Error removing background: {e}")
+        return _text(f"Error removing background: {_describe(e)}")
 
     return _write_cutout(source, arguments, data, how)
 

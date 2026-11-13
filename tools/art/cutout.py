@@ -232,8 +232,16 @@ def _despill(img, key: tuple[int, int, int], band: int = 2):
     return img
 
 
+_compile_lock = asyncio.Lock()  # concurrent cutouts (n > 1) must not run swiftc on the same output at once
+
+
 async def _ensure_cutout_binary() -> str | None:
     """Compile capture/cutout.swift if needed. Returns an error string or None."""
+    async with _compile_lock:
+        return await _compile_cutout_binary()
+
+
+async def _compile_cutout_binary() -> str | None:
     if CUTOUT_BIN.exists() and CUTOUT_BIN.stat().st_mtime >= CUTOUT_SRC.stat().st_mtime:
         return None
     from tools.video import _find_tool
@@ -290,7 +298,8 @@ async def remove_background(image_bytes: bytes, method: str = "auto", key: tuple
         if bg is None and method == "chroma":
             raise RuntimeError("chroma: the border is not one flat colour; pass key_color or use method=vision")
         if bg is not None:
-            result = chroma_key(img, bg, tolerance, keep_shadows=keep_shadows)
+            # Pure-Python pixel loops: keep them off the event loop.
+            result = await asyncio.to_thread(chroma_key, img, bg, tolerance, keep_shadows=keep_shadows)
             how = f"chroma key #{bg[0]:02X}{bg[1]:02X}{bg[2]:02X}"
         else:
             result = await vision_cutout(image_bytes)

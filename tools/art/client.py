@@ -153,9 +153,17 @@ def output_paths(save_to: str | None, project_path: str | None, prompt: str, cou
         directory = ART_ROOT / project / "art"
 
     directory.mkdir(parents=True, exist_ok=True)
-    if count == 1:
-        return [directory / f"{stem}.{ext}"]
-    return [directory / f"{stem}-{i + 1}.{ext}" for i in range(count)]
+    # Timestamped names collide when two calls with the same prompt finish in the same second: don't overwrite.
+    base, k = stem, 1
+    while True:
+        if count == 1:
+            paths = [directory / f"{stem}.{ext}"]
+        else:
+            paths = [directory / f"{stem}-{i + 1}.{ext}" for i in range(count)]
+        if not any(p.exists() for p in paths):
+            return paths
+        k += 1
+        stem = f"{base}_{k}"
 
 
 def decode_images(response: dict) -> list[bytes]:

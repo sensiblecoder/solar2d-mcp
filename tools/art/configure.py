@@ -106,7 +106,7 @@ async def _openai_status() -> list[str]:
     try:
         models = await list_image_models()
     except Exception as e:
-        return [f"OpenAI: key {mask(key)} (from {source}) did not work: {e}"]
+        return [f"OpenAI: key {mask(key)} (from {source}) did not work: {str(e) or type(e).__name__}"]
 
     def flag(m: str) -> str:
         return "" if m in models else "  (WARNING: not in this key's model list)"
@@ -132,7 +132,7 @@ async def _bfl_status() -> list[str]:
     try:
         credits = await bfl.get_credits()
     except Exception as e:
-        return [f"Black Forest Labs: key {mask(key)} (from {source}) did not work: {e}"]
+        return [f"Black Forest Labs: key {mask(key)} (from {source}) did not work: {str(e) or type(e).__name__}"]
     lines = [
         f"Black Forest Labs: key {mask(key)} (from {source}) works.",
         f"  Credits: {credits:g} (= ${credits / 100:.2f})",

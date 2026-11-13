@@ -45,9 +45,9 @@ def _save_config(config: dict) -> None:
     """Save config to file, readable by the owner only (it holds API keys)."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     fd = os.open(CONFIG_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    os.fchmod(fd, 0o600)  # O_CREAT's mode only applies to a new file; tighten an old one before writing keys
     with os.fdopen(fd, 'w') as f:
         json.dump(config, f, indent=2)
-    os.chmod(CONFIG_FILE, 0o600)  # O_CREAT's mode only applies to a new file
 
 
 def get_simulator_path() -> str | None:
