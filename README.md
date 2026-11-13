@@ -230,7 +230,8 @@ These integrations are in progress and their tool surface may change:
   - **`cutout: "difference"`** for glows, sparkles, smoke, glass and soft shadows: the art is
     rendered on white, then that render is edited onto black, and alpha is computed from the
     pair (`a = 1 - (white - black)/255`, colour un-mixed from both), so effects come out
-    genuinely semi-transparent instead of cut or solid. Costs two renders (~8-10c). If the black
+    genuinely semi-transparent instead of cut or solid. Uses `flux-2-pro` unless `model` is
+    passed (whatever `bfl_default_model` is). Costs two renders (~7.5c). If the black
     edit doesn't repaint the background (flux-3-image ignored it in testing) or the renders don't
     line up, the black pass is retried with `flux-2-pro`, then falls back to an Apple Vision
     cutout of the white render. Both renders are kept as `<name>-white.png` / `<name>-black.png`;

@@ -70,7 +70,8 @@ _COMMON_PROPERTIES = {
             "bfl + transparent: how the background is removed. chroma keys out flat magenta (crisp pixel-art edges, one "
             "render), vision uses Apple's subject cutout, auto (default) uses chroma when the border is flat. difference "
             "renders on white, then edits that render onto black, and computes real partial alpha from the pair: use it for "
-            "glows, sparkles, smoke, glass and soft shadows. Costs two renders per image."
+            "glows, sparkles, smoke, glass and soft shadows. Costs two renders per image. difference uses flux-2-pro "
+            "unless a model is passed."
         )
     },
     "keep_shadows": {
@@ -319,14 +320,18 @@ async def _openai_edit(arguments: dict, image_paths: list[Path], mask_path: Path
 
 # --- Black Forest Labs ------------------------------------------------------------------------
 
+DIFFERENCE_MODEL = "flux-2-pro"  # cutout=difference default, whatever bfl_default_model is
+
 async def _bfl_run(arguments: dict, references: list[bytes], verb: str) -> list[TextContent | ImageContent]:
-    model = arguments.get("model") or bfl.get_default_model()
     n = int(arguments.get("n") or 1)
     seed = arguments.get("seed")
     transparent = arguments.get("background") == "transparent"
     method = arguments.get("cutout") or "auto"
     if transparent and method == "difference":
+        # flux-2-pro follows the black edit reliably; the configured default may not (flux-3-image).
+        model = arguments.get("model") or DIFFERENCE_MODEL
         return await _bfl_difference(arguments, references, verb, model, n, seed)
+    model = arguments.get("model") or bfl.get_default_model()
     prompt = arguments["prompt"]
     output_format = arguments.get("output_format")
     if transparent:
